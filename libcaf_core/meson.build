@@ -114,7 +114,6 @@ libcaf_core_lib = static_library('caf_core',
   sources : src,
   include_directories : inc,
   cpp_args : cflags,
-  link_args : ldflags,
   dependencies : shared_deps,
   pic: true
 )
@@ -124,6 +123,5 @@ libcaf_core_dep = declare_dependency(
   dependencies : shared_deps,
   include_directories : inc,
   compile_args : cflags,
-  link_args : ldflags,
   version : '0.15.5',
 )
