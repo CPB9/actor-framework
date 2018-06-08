@@ -1,4 +1,3 @@
-
 src = [
   'src/abstract_actor.cpp',
   'src/abstract_channel.cpp',
@@ -6,6 +5,7 @@ src = [
   'src/abstract_coordinator.cpp',
   'src/abstract_group.cpp',
   'src/actor_addr.cpp',
+  'src/actor_clock.cpp',
   'src/actor_companion.cpp',
   'src/actor_config.cpp',
   'src/actor_control_block.cpp',
@@ -78,6 +78,7 @@ src = [
   'src/sequencer.cpp',
   'src/serializer.cpp',
   'src/shared_spinlock.cpp',
+  'src/simple_actor_clock.cpp',
   'src/skip.cpp',
   'src/splitter.cpp',
   'src/stream_aborter.cpp',
@@ -94,7 +95,9 @@ src = [
   'src/sync_request_bouncer.cpp',
   'src/term.cpp',
   'src/terminal_stream_scatterer.cpp',
+  'src/test_actor_clock.cpp',
   'src/test_coordinator.cpp',
+  'src/thread_safe_actor_clock.cpp',
   'src/timestamp.cpp',
   'src/try_match.cpp',
   'src/type_erased_tuple.cpp',
@@ -107,12 +110,10 @@ src = [
 
 subdir('caf/detail')
 
-inc = include_directories('.')
-
 libcaf_core_lib = static_library('caf_core',
   name_prefix : 'lib',
   sources : src,
-  include_directories : inc,
+  include_directories : include_directories('.'),
   cpp_args : cflags,
   dependencies : shared_deps,
   pic: true
@@ -121,7 +122,8 @@ libcaf_core_lib = static_library('caf_core',
 libcaf_core_dep = declare_dependency(
   link_with : libcaf_core_lib,
   dependencies : shared_deps,
-  include_directories : inc,
+  include_directories : include_directories('.', is_system : true),
   compile_args : cflags,
-  version : '0.15.5',
+  version : '0.15.7',
 )
+

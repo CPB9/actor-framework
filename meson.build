@@ -7,9 +7,9 @@ cc_id = cc.get_id()
 cflags = []
 
 if cc_id == 'clang'
-  cflags += ['-ftemplate-depth=512', '-ftemplate-backtrace-limit=0']
+  cflags += ['-ftemplate-depth=512', '-ftemplate-backtrace-limit=0', '-Wno-deprecated-declarations']
 elif cc_id == 'gcc'
-  cflags += '-Wno-missing-field-initializers'
+  cflags += ['-Wno-missing-field-initializers', '-Wno-deprecated-declarations']
 endif
 
 shared_deps = [dependency('threads')]
