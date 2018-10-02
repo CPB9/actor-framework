@@ -16,8 +16,7 @@
  * http://www.boost.org/LICENSE_1_0.txt.                                      *
  ******************************************************************************/
 
-#ifndef CAF_IO_MIDDLEMAN_HPP
-#define CAF_IO_MIDDLEMAN_HPP
+#pragma once
 
 #include <map>
 #include <vector>
@@ -155,6 +154,11 @@ public:
   /// Returns the enclosing actor system.
   inline actor_system& system() {
     return system_;
+  }
+
+  /// Returns the systemw-wide configuration.
+  inline const actor_system_config& config() const {
+    return system_.config();
   }
 
   /// Returns a handle to the actor managing the middleman singleton.
@@ -394,4 +398,3 @@ private:
 } // namespace io
 } // namespace caf
 
-#endif // CAF_IO_MIDDLEMAN_HPP

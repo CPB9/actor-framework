@@ -16,8 +16,7 @@
  * http://www.boost.org/LICENSE_1_0.txt.                                      *
  ******************************************************************************/
 
-#ifndef CAF_DETAIL_MESSAGE_DATA_HPP
-#define CAF_DETAIL_MESSAGE_DATA_HPP
+#pragma once
 
 #include <string>
 #include <iterator>
@@ -122,7 +121,7 @@ public:
   }
 
   inline explicit operator bool() const noexcept {
-    return static_cast<bool>(ptr_);
+    return ptr_ != nullptr;
   }
 
   inline message_data* get() const noexcept {
@@ -134,7 +133,22 @@ private:
   intrusive_ptr<message_data> ptr_;
 };
 
+inline bool operator==(const message_data::cow_ptr& x, std::nullptr_t) {
+  return x.get() == nullptr;
+}
+
+inline bool operator==(std::nullptr_t, const message_data::cow_ptr& x) {
+  return x.get() == nullptr;
+}
+
+inline bool operator!=(const message_data::cow_ptr& x, std::nullptr_t) {
+  return x.get() != nullptr;
+}
+
+inline bool operator!=(std::nullptr_t, const message_data::cow_ptr& x) {
+  return x.get() != nullptr;
+}
+
 } // namespace detail
 } // namespace caf
 
-#endif // CAF_DETAIL_MESSAGE_DATA_HPP

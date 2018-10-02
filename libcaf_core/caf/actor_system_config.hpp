@@ -16,8 +16,7 @@
  * http://www.boost.org/LICENSE_1_0.txt.                                      *
  ******************************************************************************/
 
-#ifndef CAF_ACTOR_SYSTEM_CONFIG_HPP
-#define CAF_ACTOR_SYSTEM_CONFIG_HPP
+#pragma once
 
 #include <atomic>
 #include <string>
@@ -27,15 +26,17 @@
 #include <type_traits>
 #include <unordered_map>
 
+#include "caf/actor_factory.hpp"
+#include "caf/config_option.hpp"
+#include "caf/config_option_set.hpp"
+#include "caf/config_value.hpp"
+#include "caf/dictionary.hpp"
 #include "caf/fwd.hpp"
+#include "caf/is_typed_actor.hpp"
+#include "caf/named_actor_config.hpp"
 #include "caf/stream.hpp"
 #include "caf/thread_hook.hpp"
-#include "caf/config_value.hpp"
-#include "caf/config_option.hpp"
-#include "caf/actor_factory.hpp"
-#include "caf/is_typed_actor.hpp"
 #include "caf/type_erased_value.hpp"
-#include "caf/named_actor_config.hpp"
 
 #include "caf/detail/safe_equal.hpp"
 #include "caf/detail/type_traits.hpp"
@@ -75,32 +76,17 @@ public:
 
   using error_renderer_map = hash_map<atom_value, error_renderer>;
 
-  using option_ptr = std::unique_ptr<config_option>;
-
-  using option_vector = std::vector<option_ptr>;
-
   using group_module_factory = std::function<group_module* ()>;
 
   using group_module_factory_vector = std::vector<group_module_factory>;
 
-  // -- nested classes ---------------------------------------------------------
+  using config_map = dictionary<config_value::dictionary>;
+
+  using string_list = std::vector<std::string>;
 
   using named_actor_config_map = hash_map<std::string, named_actor_config>;
 
-  class opt_group {
-  public:
-    opt_group(option_vector& xs, const char* category);
-
-    template <class T>
-    opt_group& add(T& storage, const char* name, const char* explanation) {
-      xs_.emplace_back(make_config_option(storage, cat_, name, explanation));
-      return *this;
-    }
-
-  private:
-    option_vector& xs_;
-    const char* cat_;
-  };
+  using opt_group = config_option_adder;
 
   // -- constructors, destructors, and assignment operators --------------------
 
@@ -113,22 +99,43 @@ public:
   actor_system_config(const actor_system_config&) = delete;
   actor_system_config& operator=(const actor_system_config&) = delete;
 
+  // -- properties -------------------------------------------------------------
+
+  /// @private
+  dictionary<config_value::dictionary> content;
+
+  /// Sets a config by using its INI name `config_name` to `config_value`.
+  template <class T>
+  actor_system_config& set(string_view name, T&& value) {
+    return set_impl(name, config_value{std::forward<T>(value)});
+  }
+
   // -- modifiers --------------------------------------------------------------
 
   /// Parses `args` as tuple of strings containing CLI options
   /// and `ini_stream` as INI formatted input stream.
-  actor_system_config& parse(message& args, std::istream& ini);
+  actor_system_config& parse(string_list args, std::istream& ini);
+
+  /// Parses `args` as tuple of strings containing CLI options and tries to
+  /// open `ini_file_cstr` as INI formatted config file. The parsers tries to
+  /// open `caf-application.ini` if `ini_file_cstr` is `nullptr`.
+  actor_system_config& parse(string_list args,
+                             const char* ini_file_cstr = nullptr);
 
   /// Parses the CLI options `{argc, argv}` and
   /// `ini_stream` as INI formatted input stream.
   actor_system_config& parse(int argc, char** argv, std::istream& ini);
 
-  /// Parses the CLI options `{argc, argv}` and
-  /// tries to open `config_file_name` as INI formatted config file.
-  /// The parsers tries to open `caf-application.ini` if `config_file_name`
-  /// is `nullptr`.
+  /// Parses the CLI options `{argc, argv}` and tries to open `ini_file_cstr`
+  /// as INI formatted config file. The parsers tries to open
+  /// `caf-application.ini` if `ini_file_cstr` is `nullptr`.
   actor_system_config& parse(int argc, char** argv,
                              const char* ini_file_cstr = nullptr);
+
+  actor_system_config&
+  parse(message& args, const char* ini_file_cstr = nullptr) CAF_DEPRECATED;
+
+  actor_system_config& parse(message& args, std::istream& ini) CAF_DEPRECATED;
 
   /// Allows other nodes to spawn actors created by `fun`
   /// dynamically by using `name` as identifier.
@@ -233,81 +240,92 @@ public:
     return *this;
   }
 
-  /// Stores whether the help text for this config object was
-  /// printed. If set to `true`, the application should not use
-  /// this config object to initialize an `actor_system` and
-  /// return from `main` immediately.
+  // -- parser and CLI state ---------------------------------------------------
+
+  /// Stores whether the help text was printed. If set to `true`, the
+  /// application should not use this config to initialize an `actor_system`
+  /// and instead return from `main` immediately.
   bool cli_helptext_printed;
+
+  /// Stores CLI arguments that were not consumed by CAF.
+  message args_remainder CAF_DEPRECATED;
+
+  /// Stores CLI arguments that were not consumed by CAF.
+  string_list remainder;
+
+  // -- caf-run parameters -----------------------------------------------------
 
   /// Stores whether this node was started in slave mode.
   bool slave_mode;
 
-  /// Stores the name of this node when started in slave mode.
+  /// Name of this node when started in slave mode.
   std::string slave_name;
 
-  /// Stores credentials for connecting to the bootstrap node
-  /// when using the caf-run launcher.
+  /// Credentials for connecting to the bootstrap node.
   std::string bootstrap_node;
 
-  /// Stores CLI arguments that were not consumed by CAF.
-  message args_remainder;
+  // -- stream parameters ------------------------------------------------------
 
-  /// Sets a config by using its INI name `config_name` to `config_value`.
-  actor_system_config& set(const char* cn, config_value cv);
+  /// @private
+  timespan stream_desired_batch_complexity;
 
-  // -- config parameters of the scheduler -------------------------------------
+  /// @private
+  timespan stream_max_batch_delay;
 
-  atom_value scheduler_policy;
-  size_t scheduler_max_threads;
-  size_t scheduler_max_throughput;
-  bool scheduler_enable_profiling;
-  size_t scheduler_profiling_ms_resolution;
-  std::string scheduler_profiling_output_file;
+  /// @private
+  timespan stream_credit_round_interval;
 
-  // -- config parameters for work-stealing ------------------------------------
+  /// @private
+  timespan stream_tick_duration() const noexcept;
 
-  size_t work_stealing_aggressive_poll_attempts;
-  size_t work_stealing_aggressive_steal_interval;
-  size_t work_stealing_moderate_poll_attempts;
-  size_t work_stealing_moderate_steal_interval;
-  size_t work_stealing_moderate_sleep_duration_us;
-  size_t work_stealing_relaxed_steal_interval;
-  size_t work_stealing_relaxed_sleep_duration_us;
+  timespan streaming_credit_round_interval() const noexcept CAF_DEPRECATED;
 
-  // -- config parameters for the logger ---------------------------------------
+  // -- scheduling parameters --------------------------------------------------
 
-  std::string logger_file_name;
-  std::string logger_file_format;
-  atom_value logger_console;
-  std::string logger_console_format;
-  std::string logger_component_filter;
-  atom_value logger_verbosity;
-  bool logger_inline_output;
+  atom_value scheduler_policy CAF_DEPRECATED;
+  size_t scheduler_max_threads CAF_DEPRECATED;
+  size_t scheduler_max_throughput CAF_DEPRECATED;
+  bool scheduler_enable_profiling CAF_DEPRECATED;
+  size_t scheduler_profiling_ms_resolution CAF_DEPRECATED;
+  std::string scheduler_profiling_output_file CAF_DEPRECATED;
 
-  // -- backward compatibility -------------------------------------------------
+  // -- work-stealing parameters -----------------------------------------------
 
-  std::string& logger_filename CAF_DEPRECATED;
-  std::string& logger_filter CAF_DEPRECATED;
+  size_t work_stealing_aggressive_poll_attempts CAF_DEPRECATED;
+  size_t work_stealing_aggressive_steal_interval CAF_DEPRECATED;
+  size_t work_stealing_moderate_poll_attempts CAF_DEPRECATED;
+  size_t work_stealing_moderate_steal_interval CAF_DEPRECATED;
+  size_t work_stealing_moderate_sleep_duration_us CAF_DEPRECATED;
+  size_t work_stealing_relaxed_steal_interval CAF_DEPRECATED;
+  size_t work_stealing_relaxed_sleep_duration_us CAF_DEPRECATED;
 
-  // -- config parameters of the middleman -------------------------------------
+  // -- logger parameters ------------------------------------------------------
 
-  atom_value middleman_network_backend;
-  std::string middleman_app_identifier;
-  bool middleman_enable_automatic_connections;
-  size_t middleman_max_consecutive_reads;
-  size_t middleman_heartbeat_interval;
-  bool middleman_detach_utility_actors;
-  bool middleman_detach_multiplexer;
-  bool middleman_enable_tcp;
-  bool middleman_enable_udp;
-  size_t middleman_cached_udp_buffers;
-  size_t middleman_max_pending_msgs;
+  std::string logger_file_name CAF_DEPRECATED;
+  std::string logger_file_format CAF_DEPRECATED;
+  atom_value logger_console CAF_DEPRECATED;
+  std::string logger_console_format CAF_DEPRECATED;
+  std::string logger_component_filter CAF_DEPRECATED;
+  atom_value logger_verbosity CAF_DEPRECATED;
+  bool logger_inline_output CAF_DEPRECATED;
 
-  // -- config parameters of the OpenCL module ---------------------------------
+  // -- middleman parameters ---------------------------------------------------
+
+  atom_value middleman_network_backend CAF_DEPRECATED;
+  std::string middleman_app_identifier CAF_DEPRECATED;
+  bool middleman_enable_automatic_connections CAF_DEPRECATED;
+  size_t middleman_max_consecutive_reads CAF_DEPRECATED;
+  size_t middleman_heartbeat_interval CAF_DEPRECATED;
+  bool middleman_detach_utility_actors CAF_DEPRECATED;
+  bool middleman_detach_multiplexer CAF_DEPRECATED;
+  size_t middleman_cached_udp_buffers CAF_DEPRECATED;
+  size_t middleman_max_pending_msgs CAF_DEPRECATED;
+
+  // -- OpenCL parameters ------------------------------------------------------
 
   std::string opencl_device_ids;
 
-  // -- config parameters of the OpenSSL module ---------------------------------
+  // -- OpenSSL parameters -----------------------------------------------------
 
   std::string openssl_certificate;
   std::string openssl_key;
@@ -336,15 +354,11 @@ public:
 
   error_renderer_map error_renderers;
 
-  // -- convenience functions --------------------------------------------------
+  // -- parsing parameters -----------------------------------------------------
 
-  template <class F>
-  void for_each_option(F f) const {
-    const option_vector* all_options[] = { &options_, &custom_options_ };
-    for (auto& opt_vec : all_options)
-      for (auto& opt : *opt_vec)
-        f(*opt);
-  }
+  /// Configures the file path for the INI file, `caf-application.ini` per
+  /// default.
+  std::string config_file_path;
 
   // -- utility for caf-run ----------------------------------------------------
 
@@ -356,7 +370,7 @@ public:
 protected:
   virtual std::string make_help_text(const std::vector<message::cli_arg>&);
 
-  option_vector custom_options_;
+  config_option_set custom_options_;
 
 private:
   template <class T>
@@ -367,15 +381,14 @@ private:
                                      &make_type_erased_value<T>);
   }
 
+  actor_system_config& set_impl(string_view name, config_value value);
+
   static std::string render_sec(uint8_t, atom_value, const message&);
 
   static std::string render_exit_reason(uint8_t, atom_value, const message&);
 
-  std::string extract_config_file_name(message& args);
-
-  option_vector options_;
+  void extract_config_file_path(string_list& args);
 };
 
 } // namespace caf
 
-#endif //CAF_ACTOR_SYSTEM_CONFIG_HPP

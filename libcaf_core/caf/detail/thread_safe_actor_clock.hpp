@@ -16,8 +16,7 @@
  * http://www.boost.org/LICENSE_1_0.txt.                                      *
  ******************************************************************************/
 
-#ifndef CAF_DETAIL_THREAD_SAFE_ACTOR_CLOCK_HPP
-#define CAF_DETAIL_THREAD_SAFE_ACTOR_CLOCK_HPP
+#pragma once
 
 #include <mutex>
 #include <atomic>
@@ -34,13 +33,13 @@ public:
 
   thread_safe_actor_clock();
 
-  void set_receive_timeout(time_point t, abstract_actor* self,
-                           uint32_t id) override;
+  void set_ordinary_timeout(time_point t, abstract_actor* self,
+                           atom_value type, uint64_t id) override;
 
   void set_request_timeout(time_point t, abstract_actor* self,
                            message_id id) override;
 
-  void cancel_receive_timeout(abstract_actor* self) override;
+  void cancel_ordinary_timeout(abstract_actor* self, atom_value type) override;
 
   void cancel_request_timeout(abstract_actor* self, message_id id) override;
 
@@ -51,6 +50,8 @@ public:
 
   void schedule_message(time_point t, group target, strong_actor_ptr sender,
                         message content) override;
+
+  void cancel_all() override;
 
   void run_dispatch_loop();
 
@@ -65,4 +66,3 @@ private:
 } // namespace detail
 } // namespace caf
 
-#endif // CAF_DETAIL_THREAD_SAFE_ACTOR_CLOCK_HPP

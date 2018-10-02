@@ -16,8 +16,7 @@
  * http://www.boost.org/LICENSE_1_0.txt.                                      *
  ******************************************************************************/
 
-#ifndef CAF_REMOTE_ACTOR_REGISTRY_HPP
-#define CAF_REMOTE_ACTOR_REGISTRY_HPP
+#pragma once
 
 #include <utility>
 #include <functional>
@@ -95,7 +94,13 @@ public:
   /// Deletes all proxies.
   void clear();
 
+  /// Returns the hosting actor system.
   inline actor_system& system() {
+    return system_;
+  }
+
+  /// Returns the hosting actor system.
+  inline const actor_system& system() const {
     return system_;
   }
 
@@ -113,4 +118,3 @@ private:
 
 } // namespace caf
 
-#endif

@@ -16,20 +16,18 @@
  * http://www.boost.org/LICENSE_1_0.txt.                                      *
  ******************************************************************************/
 
-#ifndef CAF_TIMESTAMP_HPP
-#define CAF_TIMESTAMP_HPP
+#pragma once
 
 #include <chrono>
 #include <string>
 #include <cstdint>
 
+#include "caf/timespan.hpp"
+
 namespace caf {
 
 /// A portable timestamp with nanosecond resolution anchored at the UNIX epoch.
-using timestamp = std::chrono::time_point<
-  std::chrono::system_clock,
-  std::chrono::duration<int64_t, std::nano>
->;
+using timestamp = std::chrono::time_point<std::chrono::system_clock, timespan>;
 
 /// Convenience function for returning a `timestamp` representing
 /// the current system time.
@@ -43,4 +41,3 @@ void append_timestamp_to_string(std::string& x, const timestamp& y);
 
 } // namespace caf
 
-#endif // CAF_TIMESTAMP_HPP

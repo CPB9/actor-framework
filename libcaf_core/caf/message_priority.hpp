@@ -16,18 +16,16 @@
  * http://www.boost.org/LICENSE_1_0.txt.                                      *
  ******************************************************************************/
 
-#ifndef CAF_PRIORITY_HPP
-#define CAF_PRIORITY_HPP
+#pragma once
 
 #include <cstdint>
 
 namespace caf {
 
-enum class message_priority : uint32_t {
+enum class message_priority {
   normal,
-  high
+  high = 3 // 0b11, see message_id.hpp why this is important
 };
 
 } // namespace caf
 
-#endif // CAF_PRIORITY_HPP

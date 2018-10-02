@@ -18,11 +18,11 @@
 
 #include "caf/io/network/test_multiplexer.hpp"
 
-#include "caf/scheduler/abstract_coordinator.hpp"
-
-#include "caf/io/scribe.hpp"
-#include "caf/io/doorman.hpp"
 #include "caf/io/datagram_servant.hpp"
+#include "caf/io/doorman.hpp"
+#include "caf/io/scribe.hpp"
+#include "caf/raise_error.hpp"
+#include "caf/scheduler/abstract_coordinator.hpp"
 
 namespace caf {
 namespace io {
@@ -72,7 +72,6 @@ test_multiplexer::datagram_data::
 
 test_multiplexer::test_multiplexer(actor_system* sys)
     : multiplexer(sys),
-      tid_(std::this_thread::get_id()),
       inline_runnables_(0),
       servant_ids_(0) {
   CAF_ASSERT(sys != nullptr);
@@ -744,8 +743,9 @@ bool test_multiplexer::try_accept_connection() {
       doormen.emplace_back(&kvp.second);
   }
   // Try accepting a new connection on all existing doorman.
-  return std::any_of(doormen.begin(), doormen.end(),
-                     [](doorman_data* x) { return x->ptr->new_connection(); });
+  return std::any_of(doormen.begin(), doormen.end(), [](doorman_data* x) {
+    return x->ptr != nullptr ? x->ptr->new_connection() : false;
+  });
 }
 
 bool test_multiplexer::try_read_data() {

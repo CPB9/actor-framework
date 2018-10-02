@@ -16,9 +16,9 @@
  * http://www.boost.org/LICENSE_1_0.txt.                                      *
  ******************************************************************************/
 
-#ifndef CAF_OPTIONAL_HPP
-#define CAF_OPTIONAL_HPP
+#pragma once
 
+#include <memory>
 #include <new>
 #include <utility>
 
@@ -158,7 +158,7 @@ class optional {
   void cr(V&& x) {
     CAF_ASSERT(!m_valid);
     m_valid = true;
-    new (&m_value) T(std::forward<V>(x));
+    new (std::addressof(m_value)) T(std::forward<V>(x));
   }
 
   bool m_valid;
@@ -287,8 +287,8 @@ template <class Inspector, class T>
 typename std::enable_if<Inspector::writes_state,
                         typename Inspector::result_type>::type
 inspect(Inspector& f, optional<T>& x) {
-  bool flag;
-  typename optional<T>::type tmp;
+  bool flag = false;
+  typename optional<T>::type tmp{};
   optional_inspect_helper<T> helper{flag, tmp};
   auto guard = detail::make_scope_guard([&] {
     if (flag)
@@ -298,7 +298,6 @@ inspect(Inspector& f, optional<T>& x) {
   });
   return f(flag, helper);
 }
-
 
 /// @relates optional
 template <class T>
@@ -495,4 +494,3 @@ bool operator>=(const T& lhs, const optional<T>& rhs) {
 
 } // namespace caf
 
-#endif // CAF_OPTIONAL_HPP

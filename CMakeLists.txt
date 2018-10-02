@@ -129,12 +129,6 @@ else()
 endif()
 
 ################################################################################
-#                        respect environment variables                         #
-################################################################################
-
-set(LDFLAGS $ENV{LDFLAGS})
-
-################################################################################
 #                              get version of CAF                              #
 ################################################################################
 
@@ -183,7 +177,7 @@ endif()
 ################################################################################
 
 # check for g++ >= 4.8 or clang++ > = 3.2
-if(NOT WIN32 AND NOT CAF_NO_COMPILER_CHECK)
+if(NOT WIN32 AND NOT CAF_NO_COMPILER_CHECK AND NOT CMAKE_CROSSCOMPILING)
   try_run(ProgramResult
           CompilationSucceeded
           "${CMAKE_CURRENT_BINARY_DIR}"
@@ -243,6 +237,7 @@ if(CAF_MORE_WARNINGS)
                "-Wno-global-constructors -Wno-missing-prototypes "
                "-Wno-c++98-compat-pedantic -Wno-unused-member-function "
                "-Wno-unused-const-variable -Wno-switch-enum "
+               "-Wno-abstract-vbase-init "
                "-Wno-missing-noreturn -Wno-covered-switch-default")
   elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
     set(WFLAGS "-Waddress -Wall -Warray-bounds "
@@ -261,7 +256,7 @@ if(CAF_MORE_WARNINGS)
                "-Wnon-virtual-dtor -Wnonnull -Woverflow "
                "-Woverlength-strings -Wparentheses "
                "-Wpmf-conversions -Wpointer-arith -Wreorder "
-               "-Wreturn-type -Wsequence-point -Wshadow "
+               "-Wreturn-type -Wsequence-point "
                "-Wsign-compare -Wswitch -Wtype-limits -Wundef "
                "-Wuninitialized -Wunused -Wvla -Wwrite-strings")
   endif()
@@ -316,7 +311,7 @@ if(MINGW)
   add_definitions(-D_WIN32_WINNT=0x0600)
   add_definitions(-DWIN32)
   include(GenerateExportHeader)
-  list(APPEND LDFLAGS -lws2_32 -liphlpapi -lpsapi)
+  list(APPEND CAF_EXTRA_LDFLAGS -lws2_32 -liphlpapi -lpsapi)
   # build static to avoid runtime dependencies to GCC libraries
   build_string("EXTRA_FLAGS" "-static")
 elseif(CYGWIN)
@@ -325,7 +320,7 @@ else()
   build_string("EXTRA_FLAGS" "-fPIC")
 endif()
 if (WIN32)
-  list(APPEND LDFLAGS ws2_32 iphlpapi)
+  list(APPEND CAF_EXTRA_LDFLAGS ws2_32 iphlpapi)
 endif()
 # iOS support
 if(CAF_OSX_SYSROOT)
@@ -343,6 +338,10 @@ endif()
 # check if the user provided CXXFLAGS, set defaults otherwise
 if(NOT CMAKE_CXX_FLAGS)
   set(CMAKE_CXX_FLAGS                   "-std=c++11 -Wextra -Wall -pedantic ${EXTRA_FLAGS}")
+endif()
+if (NOT "${CMAKE_CXX_FLAGS}" MATCHES "-std=")
+  message(STATUS "Supplied CXXFLAGS do not contain a C++ standard, setting std to c++11")
+  set(CMAKE_CXX_FLAGS                   "-std=c++11 ${CMAKE_CXX_FLAGS}")
 endif()
 if(NOT CMAKE_CXX_FLAGS_DEBUG)
   set(CMAKE_CXX_FLAGS_DEBUG             "-O0 -g")
@@ -369,10 +368,8 @@ endif()
 #                       configure build_config.hpp header                      #
 ################################################################################
 
-if(CAF_LOG_LEVEL)
-  set(CAF_LOG_LEVEL_INT ${CAF_LOG_LEVEL})
-else()
-  set(CAF_LOG_LEVEL_INT -1)
+if(NOT CAF_LOG_LEVEL)
+  set(CAF_LOG_LEVEL "-1")
 endif()
 
 macro(to_int_value name)
@@ -383,27 +380,9 @@ macro(to_int_value name)
   endif()
 endmacro()
 
-to_int_value(CAF_LOG_LEVEL)
 to_int_value(CAF_NO_EXCEPTIONS)
 to_int_value(CAF_NO_MEM_MANAGEMENT)
 to_int_value(CAF_ENABLE_RUNTIME_CHECKS)
-
-# find boost asio if the asio multiplexer should be used for testing
-if(CAF_USE_ASIO)
-  set(Boost_USE_MULTITHREADED ON)
-  find_package(Boost COMPONENTS system)
-  if(Boost_FOUND)
-    include_directories(${Boost_INCLUDE_DIRS})
-    set(LD_DIRS ${LD_DIRS} ${Boost_LIBRARIES})
-    list(APPEND LDFLAGS ${Boost_SYSTEM_LIBRARY})
-    set(CAF_USE_ASIO_INT 1)
-  else()
-    set(CAF_USE_ASIO no)
-    set(CAF_USE_ASIO_INT -1)
-  endif()
-else()
-  set(CAF_USE_ASIO_INT -1)
-endif()
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/cmake/build_config.hpp.in"
                "${CMAKE_CURRENT_SOURCE_DIR}/libcaf_core/caf/detail/build_config.hpp"
@@ -546,22 +525,24 @@ if(NOT CAF_NO_OPENSSL)
               "Disable OpenSSL. Required >= 1.0.1 due to TLSv1.2 support.")
       set(CAF_NO_OPENSSL yes)
     else()
-      # Check if openssl headers and library versions match
-      set(CMAKE_REQUIRED_LIBRARIES ${OPENSSL_LIBRARIES})
-      set(CMAKE_REQUIRED_INCLUDES ${OPENSSL_INCLUDE_DIR})
-      check_c_source_runs("
-        #include <openssl/opensslv.h>
-        #include <openssl/crypto.h>
-        int main() {
-          if (SSLeay() == OPENSSL_VERSION_NUMBER) {
-            return 0;
+      if(NOT CMAKE_CROSSCOMPILING)
+        # Check if openssl headers and library versions match
+        set(CMAKE_REQUIRED_LIBRARIES ${OPENSSL_LIBRARIES})
+        set(CMAKE_REQUIRED_INCLUDES ${OPENSSL_INCLUDE_DIR})
+        check_c_source_runs("
+          #include <openssl/opensslv.h>
+          #include <openssl/crypto.h>
+          int main() {
+            if (SSLeay() == OPENSSL_VERSION_NUMBER) {
+              return 0;
+            }
+            return -1;
           }
-          return -1;
-        }
-      " OPENSSL_CORRECT_VERSION_NUMBER)
-      if (NOT OPENSSL_CORRECT_VERSION_NUMBER)
-        message(FATAL_ERROR
-          "OpenSSL library version does not match headers")
+        " OPENSSL_CORRECT_VERSION_NUMBER)
+        if (NOT OPENSSL_CORRECT_VERSION_NUMBER)
+          message(FATAL_ERROR
+            "OpenSSL library version does not match headers")
+        endif()
       endif()
       include_directories(BEFORE ${OPENSSL_INCLUDE_DIR})
       add_optional_caf_lib(openssl)
@@ -615,7 +596,7 @@ if(NOT CAF_NO_UNIT_TESTS)
                  libcaf_test/caf/test/unit_test_impl.hpp
                  ${CAF_ALL_UNIT_TESTS})
   target_link_libraries(caf-test
-                        ${LDFLAGS}
+                        ${CAF_EXTRA_LDFLAGS}
                         ${CAF_LIBRARIES}
                         ${PTHREAD_LIBRARIES})
   add_custom_target(all_unit_tests)
@@ -635,12 +616,7 @@ if(NOT CAF_NO_UNIT_TESTS)
   macro (make_test suite)
     string(REPLACE " " "_" test_name ${suite})
     set(caf_test ${EXECUTABLE_OUTPUT_PATH}/caf-test)
-    add_test(${test_name} ${caf_test} -n -v 5 -s "${suite}" ${ARGN})
-    # add some extra unit testing options when testing ASIO as well
-    if(CAF_USE_ASIO AND "${suite}" MATCHES "^io_.+$" AND NOT "${suite}" MATCHES ".+_udp$")
-      add_test(${test_name}_asio ${caf_test} -n -v 5 -s
-               "${suite}" ${ARGN} -- "--caf#middleman.network-backend=asio")
-    endif()
+    add_test(${test_name} ${caf_test} -r 300 -n -v 5 -s "${suite}" ${ARGN})
   endmacro ()
   list(LENGTH suites num_suites)
   message(STATUS "Found ${num_suites} test suites")
@@ -772,6 +748,8 @@ invertYesNo(CAF_NO_PYTHON CAF_BUILD_PYTHON)
 # collect all compiler flags
 string(TOUPPER "${CMAKE_BUILD_TYPE}" UPPER_BUILD_TYPE)
 set(ALL_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${UPPER_BUILD_TYPE}}")
+set(ALL_LD_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${CAF_EXTRA_LDFLAGS}")
+string(STRIP "${ALL_LD_FLAGS}" ALL_LD_FLAGS)
 # done
 if(NOT CAF_NO_SUMMARY)
   message(STATUS
@@ -799,7 +777,7 @@ if(NOT CAF_NO_SUMMARY)
         "\n"
         "\nCXX:                   ${CMAKE_CXX_COMPILER}"
         "\nCXXFLAGS:              ${ALL_CXX_FLAGS}"
-        "\nLDFLAGS:               ${LDFLAGS}"
+        "\nLINKER_FLAGS (shared)  ${ALL_LD_FLAGS}"
         "\n"
         "\nSource directory:      ${CMAKE_CURRENT_SOURCE_DIR}"
         "\nBuild directory:       ${CMAKE_CURRENT_BINARY_DIR}"

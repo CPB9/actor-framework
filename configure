@@ -14,19 +14,7 @@ use this configure script to access CMake equivalent functionality.\
 command="$0 $*"
 dirname_0=`dirname $0`
 sourcedir=`cd $dirname_0 && pwd`
-benchmark_suite_options=""
-if [ -d "$sourcedir/benchmarks/caf" ] ; then
-benchmark_suite_options="\
 
-  Benchmark Suite Options:
-    --with-javac=FILE           path to Java compiler
-    --with-java=FILE            path to Java Runtime
-    --with-scalac=FILE          path to Scala compiler
-    --with-erlc=FILE            path to Erlang compiler
-    --with-charmc=FILE          path to Charm++ compiler
-    --with-salsa=FILE           path to SALSA Lite jar
-"
-fi
 usage="\
 Usage: $0 [OPTION]... [VAR=VALUE]...
 
@@ -56,14 +44,16 @@ Usage: $0 [OPTION]... [VAR=VALUE]...
     --warnings-as-errors        build with '-Werror'
     --with-ccache               use ccache to improve build performance
 
+  Additional Examples:
+    --with-qt-examples          include Qt example(s)
+    --with-protobuf-examples    include Google Protobuf example(s)
+
   Installation Directories:
     --prefix=PREFIX             installation directory [/usr/local]
 
   Remove Standard Features (even if all dependencies are available):
     --no-memory-management      build without memory management
     --no-examples               build without examples
-    --no-qt-examples            build without Qt examples
-    --no-protobuf-examples      build without Google Protobuf examples
     --no-curl-examples          build without libcurl examples
     --no-unit-tests             build without unit tests
     --no-opencl                 build without OpenCL module
@@ -73,9 +63,8 @@ Usage: $0 [OPTION]... [VAR=VALUE]...
     --no-io                     build without I/O module
     --no-python                 build without python binding
     --no-summary                do not print configuration before building
-
-  Testing:
-    --with-asio                 use ASIO multiplexer in unit tests
+    --core-only                 sets no-examples, no-opencl, no-openssl,
+                                no-tools, no-python, and no-io
 
   Debugging:
     --with-runtime-checks       build with requirement checks at runtime
@@ -86,7 +75,14 @@ Usage: $0 [OPTION]... [VAR=VALUE]...
                                   - DEBUG
                                   - TRACE
     --with-address-sanitizer    build with address sanitizer if available
+    --with-asan                 alias for --with-address-sanitier
+    --enable-asan               alias for --with-address-sanitier
     --with-gcov                 build with gcov coverage enabled
+
+  Convenience options:
+    --dev-mode                  sets --build-type=debug, --no-examples,
+                                --no-tools, --with-runtime-checks,
+                                --log-level=trace, and --enable-asan
 
   Influential Environment Variables (only on first invocation):
     CXX                         C++ compiler command
@@ -102,7 +98,7 @@ Usage: $0 [OPTION]... [VAR=VALUE]...
                                   - iphoneos: for iOS device
                                   - iphonesimulator: for iOS simulator
     --ios-min-ver=VERSION       set the ios deployment target version
-$benchmark_suite_options"
+"
 
 
 # Appends a CMake cache entry definition to the CMakeCacheEntries variable.
@@ -242,6 +238,12 @@ while [ $# -ne 0 ]; do
         --with-address-sanitizer)
             append_cache_entry CAF_ENABLE_ADDRESS_SANITIZER BOOL yes
             ;;
+        --with-asan)
+            append_cache_entry CAF_ENABLE_ADDRESS_SANITIZER BOOL yes
+            ;;
+        --enable-asan)
+            append_cache_entry CAF_ENABLE_ADDRESS_SANITIZER BOOL yes
+            ;;
         --with-gcov)
             append_cache_entry CAF_ENABLE_GCOV BOOL yes
             ;;
@@ -276,9 +278,6 @@ while [ $# -ne 0 ]; do
         --ios-min-ver=*)
             append_cache_entry CMAKE_OSX_ARCHITECTURES STRING "\$(ARCHS_STANDARD_32_64_BIT)"
             append_cache_entry CAF_IOS_DEPLOYMENT_TARGET STRING "$optarg"
-            ;;
-        --with-asio)
-            append_cache_entry CAF_USE_ASIO BOOL yes
             ;;
         --with-log-level=*)
             level=`echo "$optarg" | tr '[:lower:]' '[:upper:]'`
@@ -334,11 +333,11 @@ while [ $# -ne 0 ]; do
         --no-examples)
             append_cache_entry CAF_NO_EXAMPLES BOOL yes
             ;;
-        --no-qt-examples)
-            append_cache_entry CAF_NO_QT_EXAMPLES BOOL yes
+        --with-qt-examples)
+            append_cache_entry CAF_BUILD_QT_EXAMPLES BOOL yes
             ;;
-        --no-protobuf-examples)
-            append_cache_entry CAF_NO_PROTOBUF_EXAMPLES BOOL yes
+        --with-protobuf-examples)
+            append_cache_entry CAF_BUILD_PROTOBUF_EXAMPLES BOOL yes
             ;;
         --no-curl-examples)
             append_cache_entry CAF_NO_CURL_EXAMPLES BOOL yes
@@ -361,24 +360,6 @@ while [ $# -ne 0 ]; do
         --static-runtime)
             append_cache_entry CAF_BUILD_STATIC_RUNTIME BOOL yes
             ;;
-        --with-javac=*)
-            append_cache_entry CAF_JAVA_COMPILER FILEPATH "$optarg"
-            ;;
-        --with-java=*)
-            append_cache_entry CAF_JAVA_BIN FILEPATH "$optarg"
-            ;;
-        --with-scalac=*)
-            append_cache_entry CAF_SCALA_COMPILER FILEPATH "$optarg"
-            ;;
-        --with-erlc=*)
-            append_cache_entry CAF_ERLANG_COMPILER FILEPATH "$optarg"
-            ;;
-        --with-charmc=*)
-            append_cache_entry CAF_CHARM_COMPILER FILEPATH "$optarg"
-            ;;
-        --with-salsa=*)
-            append_cache_entry CAF_SALSA_JAR FILEPATH "$optarg"
-            ;;
         --with-python-config=*)
             append_cache_entry CAF_PYTHON_CONFIG_BIN FILEPATH "$optarg"
             ;;
@@ -396,6 +377,22 @@ while [ $# -ne 0 ]; do
             ;;
         --no-summary)
             append_cache_entry CAF_NO_SUMMARY BOOL yes
+            ;;
+        --core-only)
+            append_cache_entry CAF_NO_TOOLS BOOL yes
+            append_cache_entry CAF_NO_IO BOOL yes
+            append_cache_entry CAF_NO_PYTHON BOOL yes
+            append_cache_entry CAF_NO_EXAMPLES BOOL yes
+            append_cache_entry CAF_NO_OPENCL BOOL yes
+            append_cache_entry CAF_NO_OPENSSL BOOL yes
+            ;;
+        --dev-mode)
+            append_cache_entry CMAKE_BUILD_TYPE STRING Debug
+            append_cache_entry CAF_NO_EXAMPLES BOOL yes
+            append_cache_entry CAF_NO_TOOLS BOOL yes
+            append_cache_entry CAF_LOG_LEVEL STRING 4
+            append_cache_entry CAF_ENABLE_RUNTIME_CHECKS BOOL yes
+            append_cache_entry CAF_ENABLE_ADDRESS_SANITIZER BOOL yes
             ;;
         *)
             echo "Invalid option '$1'.  Try $0 --help to see available options."

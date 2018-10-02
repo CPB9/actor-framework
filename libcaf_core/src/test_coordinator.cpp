@@ -20,8 +20,10 @@
 
 #include <limits>
 
-#include "caf/resumable.hpp"
+#include "caf/actor_system_config.hpp"
 #include "caf/monitorable_actor.hpp"
+#include "caf/raise_error.hpp"
+#include "caf/resumable.hpp"
 
 namespace caf {
 namespace scheduler {
@@ -85,7 +87,8 @@ void test_coordinator::start() {
 }
 
 void test_coordinator::stop() {
-  run_dispatch_loop();
+  while (run() > 0)
+    trigger_timeouts();
 }
 
 void test_coordinator::enqueue(resumable* ptr) {
@@ -145,27 +148,6 @@ size_t test_coordinator::run(size_t max_count) {
   return res;
 }
 
-bool test_coordinator::dispatch_once() {
-  return clock().dispatch_once();
-}
-
-size_t test_coordinator::dispatch() {
-  return clock().dispatch();
-}
-
-std::pair<size_t, size_t> test_coordinator::run_dispatch_loop() {
-  std::pair<size_t, size_t> res;
-  size_t i = 0;
-  do {
-    auto x = run();
-    auto y = dispatch();
-    res.first += x;
-    res.second += y;
-    i = x + y;
-  } while (i > 0);
-  return res;
-}
-
 void test_coordinator::inline_next_enqueue() {
   after_next_enqueue([=] { run_once_lifo(); });
 }
@@ -177,6 +159,17 @@ void test_coordinator::inline_all_enqueues() {
 void test_coordinator::inline_all_enqueues_helper() {
   run_once_lifo();
   after_next_enqueue([=] { inline_all_enqueues_helper(); });
+}
+
+std::pair<size_t, size_t>
+test_coordinator::run_dispatch_loop(timespan cycle_duration) {
+  size_t messages = 0;
+  size_t timeouts = 0;
+  while (has_job() || has_pending_timeout()) {
+    messages += run();
+    timeouts += advance_time(cycle_duration);
+  }
+  return {messages, timeouts};
 }
 
 } // namespace caf

@@ -82,15 +82,15 @@ bool monitorable_actor::cleanup(error&& reason, execution_unit* host) {
         fail_state_ = std::move(reason);
       attachables_head_.swap(head);
       flags(flags() | is_terminated_flag | is_cleaned_up_flag);
-      on_cleanup();
+      on_cleanup(fail_state_);
       return true;
     }
     return false;
   });
   if (!set_fail_state)
     return false;
-  CAF_LOG_INFO("cleanup" << CAF_ARG(id())
-               << CAF_ARG(node()) << CAF_ARG(reason));
+  CAF_LOG_DEBUG("cleanup" << CAF_ARG(id())
+                << CAF_ARG(node()) << CAF_ARG(reason));
   // send exit messages
   for (attachable* i = head.get(); i != nullptr; i = i->next.get())
     i->actor_exited(reason, host);
@@ -104,7 +104,7 @@ bool monitorable_actor::cleanup(error&& reason, execution_unit* host) {
   return true;
 }
 
-void monitorable_actor::on_cleanup() {
+void monitorable_actor::on_cleanup(const error&) {
   // nop
 }
 
@@ -185,6 +185,11 @@ bool monitorable_actor::remove_backlink(abstract_actor* x) {
   CAF_LOG_TRACE(CAF_ARG(x));
   default_attachable::observe_token tk{x->address(), default_attachable::link};
   return detach_impl(tk, true) > 0;
+}
+
+error monitorable_actor::fail_state() const {
+  std::unique_lock<std::mutex> guard{mtx_};
+  return fail_state_;
 }
 
 size_t monitorable_actor::detach_impl(const attachable::token& what,

@@ -16,8 +16,7 @@
  * http://www.boost.org/LICENSE_1_0.txt.                                      *
  ******************************************************************************/
 
-#ifndef CAF_ACTOR_FACTORY_HPP
-#define CAF_ACTOR_FACTORY_HPP
+#pragma once
 
 #include <set>
 #include <string>
@@ -156,7 +155,8 @@ actor_factory make_actor_factory(F fun) {
                                typename ctrait::arg_types>;
       fd f{fun, static_cast<impl*>(x)};
       empty_type_erased_tuple dummy_;
-      auto& ct = msg.empty() ? dummy_ : const_cast<message&>(msg).content();
+      auto& ct = msg.empty() ? dummy_
+                             : const_cast<message&>(msg).content();
       auto opt = ct.apply(f);
       if (!opt)
         return {};
@@ -191,11 +191,6 @@ actor_factory_result dyn_spawn_class(actor_config& cfg, message& msg) {
 
 template <class T, class... Ts>
 actor_factory make_actor_factory() {
-  /*
-  static_assert(std::is_same<T*, decltype(new T(std::declval<actor_config&>(),
-                                                std::declval<Ts>()...))>::value,
-                "no constructor for T(Ts...) exists");
-  */
   static_assert(detail::conjunction<
                   std::is_lvalue_reference<Ts>::value...
                 >::value,
@@ -207,4 +202,3 @@ actor_factory make_actor_factory() {
 
 } // namespace caf
 
-#endif // CAF_ACTOR_FACTORY_HPP
