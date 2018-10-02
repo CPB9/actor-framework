@@ -27,7 +27,7 @@ namespace caf {
 
 outbound_path::outbound_path(stream_slot sender_slot,
                              strong_actor_ptr receiver_hdl)
-    : slots(sender_slot, invalid_stream_slot),
+    : slts(sender_slot, invalid_stream_slot),
       hdl(std::move(receiver_hdl)),
       next_batch_id(1),
       open_credit(0),
@@ -58,7 +58,7 @@ void outbound_path::emit_open(local_actor* self, stream_slot slot,
 }
 
 void outbound_path::emit_batch(local_actor* self, int32_t xs_size, message xs) {
-  CAF_LOG_TRACE(CAF_ARG(slots) << CAF_ARG(xs_size) << CAF_ARG(xs));
+  CAF_LOG_TRACE(CAF_ARG(slts) << CAF_ARG(xs_size) << CAF_ARG(xs));
   CAF_ASSERT(xs_size > 0);
   CAF_ASSERT(xs_size <= std::numeric_limits<int32_t>::max());
   CAF_ASSERT(open_credit >= xs_size);
@@ -67,35 +67,35 @@ void outbound_path::emit_batch(local_actor* self, int32_t xs_size, message xs) {
   downstream_msg::batch batch{static_cast<int32_t>(xs_size), std::move(xs),
                               bid};
   unsafe_send_as(self, hdl,
-                 downstream_msg{slots, self->address(), std::move(batch)});
+                 downstream_msg{slts, self->address(), std::move(batch)});
 }
 
 void outbound_path::emit_regular_shutdown(local_actor* self) {
-  CAF_LOG_TRACE(CAF_ARG(slots));
+  CAF_LOG_TRACE(CAF_ARG(slts));
   unsafe_send_as(self, hdl,
-                 make<downstream_msg::close>(slots, self->address()));
+                 make<downstream_msg::close>(slts, self->address()));
 }
 
 void outbound_path::emit_irregular_shutdown(local_actor* self, error reason) {
-  CAF_LOG_TRACE(CAF_ARG(slots) << CAF_ARG(reason));
+  CAF_LOG_TRACE(CAF_ARG(slts) << CAF_ARG(reason));
   /// Note that we always send abort messages anonymous. They can get send
   /// after `self` already terminated and we must not form strong references
   /// after that point. Since downstream messages contain the sender address
   /// anyway, we only omit redundant information.
   anon_send(actor_cast<actor>(hdl),
-            make<downstream_msg::forced_close>(slots, self->address(),
+            make<downstream_msg::forced_close>(slts, self->address(),
                                                std::move(reason)));
 }
 
 void outbound_path::emit_irregular_shutdown(local_actor* self,
-                                            stream_slots slots,
+                                            stream_slots slts,
                                             const strong_actor_ptr& hdl,
                                             error reason) {
-  CAF_LOG_TRACE(CAF_ARG(slots) << CAF_ARG(hdl) << CAF_ARG(reason));
+  CAF_LOG_TRACE(CAF_ARG(slts) << CAF_ARG(hdl) << CAF_ARG(reason));
   /// Note that we always send abort messages anonymous. See reasoning in first
   /// function overload.
   anon_send(actor_cast<actor>(hdl),
-            make<downstream_msg::forced_close>(slots, self->address(),
+            make<downstream_msg::forced_close>(slts, self->address(),
                                                std::move(reason)));
 }
 

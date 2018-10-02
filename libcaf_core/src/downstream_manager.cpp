@@ -68,7 +68,7 @@ std::vector<stream_slot> downstream_manager::path_slots() {
   std::vector<stream_slot> xs;
   xs.reserve(num_paths());
   for_each_path([&](outbound_path& x) {
-    xs.emplace_back(x.slots.sender);
+    xs.emplace_back(x.slts.sender);
   });
   return xs;
 }
@@ -78,7 +78,7 @@ std::vector<stream_slot> downstream_manager::open_path_slots() {
   xs.reserve(num_paths());
   for_each_path([&](outbound_path& x) {
     if (!x.closing)
-      xs.emplace_back(x.slots.sender);
+      xs.emplace_back(x.slts.sender);
   });
   return xs;
 }

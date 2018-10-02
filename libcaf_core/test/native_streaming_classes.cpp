@@ -310,19 +310,19 @@ public:
     mgr->add_inbound_path(in);
   }
 
-  void operator()(stream_slots slots, actor_addr& sender,
+  void operator()(stream_slots slts, actor_addr& sender,
                   upstream_msg::ack_open& x) {
-    TRACE(name_, ack_open, CAF_ARG(slots),
+    TRACE(name_, ack_open, CAF_ARG(slts),
           CAF_ARG2("sender", name_of(x.rebind_to)), CAF_ARG(x));
     CAF_REQUIRE_EQUAL(sender, x.rebind_to);
-    scheduled_actor::handle_upstream_msg(slots, sender, x);
+    scheduled_actor::handle_upstream_msg(slts, sender, x);
   }
 
-  void operator()(stream_slots slots, actor_addr& sender,
+  void operator()(stream_slots slts, actor_addr& sender,
                   upstream_msg::ack_batch& x) {
-    TRACE(name_, ack_batch, CAF_ARG(slots),
+    TRACE(name_, ack_batch, CAF_ARG(slts),
           CAF_ARG2("sender", name_of(sender)), CAF_ARG(x));
-    scheduled_actor::handle_upstream_msg(slots, sender, x);
+    scheduled_actor::handle_upstream_msg(slts, sender, x);
   }
 
   void advance_time() {
@@ -347,14 +347,14 @@ public:
     tick_emitter_.update(now(), f);
   }
 
-  inbound_path* make_inbound_path(stream_manager_ptr mgr, stream_slots slots,
+  inbound_path* make_inbound_path(stream_manager_ptr mgr, stream_slots slts,
                                   strong_actor_ptr sender) override {
     using policy_type = policy::downstream_messages::nested;
     auto res = get<2>(mbox.queues())
-               .queues().emplace(slots.receiver, policy_type{nullptr});
+               .queues().emplace(slts.receiver, policy_type{nullptr});
     if (!res.second)
       return nullptr;
-    auto path = new inbound_path(std::move(mgr), slots, std::move(sender));
+    auto path = new inbound_path(std::move(mgr), slts, std::move(sender));
     res.first->second.policy().handler.reset(path);
     return path;
   }
@@ -427,10 +427,10 @@ struct msg_visitor {
     auto& um = x.content().get_mutable_as<upstream_msg>(0);
     auto f = detail::make_overload(
       [&](upstream_msg::ack_open& y) {
-        (*self)(um.slots, um.sender, y);
+        (*self)(um.slts, um.sender, y);
       },
       [&](upstream_msg::ack_batch& y) {
-        (*self)(um.slots, um.sender, y);
+        (*self)(um.slts, um.sender, y);
       },
       [](upstream_msg::drop&) {
         CAF_FAIL("did not expect upstream_msg::drop");
@@ -464,13 +464,13 @@ struct msg_visitor {
         return intrusive::task_result::resume;
       },
       [&](downstream_msg::close& y) {
-        TRACE(self->name(), close, CAF_ARG(dm.slots));
-        auto slots = dm.slots;
-        auto i = self->stream_managers().find(slots.receiver);
+        TRACE(self->name(), close, CAF_ARG(dm.slts));
+        auto slts = dm.slts;
+        auto i = self->stream_managers().find(slts.receiver);
         CAF_REQUIRE_NOT_EQUAL(i, self->stream_managers().end());
         i->second->handle(inptr, y);
         q.policy().handler.reset();
-        qs.erase_later(slots.receiver);
+        qs.erase_later(slts.receiver);
         if (!i->second->done()) {
           self->stream_managers().erase(i);
         } else {

@@ -154,7 +154,7 @@ public:
     // Make sure state_map_ and paths_ are always equally sorted, otherwise
     // we'll run into UB when calling `zip_foreach`.
     CAF_ASSERT(state_map_.size() == this->paths_.size());
-    auto slot = ptr->slots.sender;
+    auto slot = ptr->slts.sender;
     // Append to the regular path map.
     if (!super::insert_path(std::move(ptr))) {
       CAF_LOG_DEBUG("unable to insert path at slot" << slot);
@@ -208,9 +208,9 @@ protected:
   void about_to_erase(outbound_path* ptr, bool silent,
                       error* reason) override {
     CAF_ASSERT(ptr != nullptr);
-    CAF_LOG_TRACE(CAF_ARG2("slot", ptr->slots.sender) << CAF_ARG(silent) <<
+    CAF_LOG_TRACE(CAF_ARG2("slot", ptr->slts.sender) << CAF_ARG(silent) <<
                   CAF_ARG(reason));
-    state_map_.erase(ptr->slots.sender);
+    state_map_.erase(ptr->slts.sender);
     super::about_to_erase(ptr, silent, reason);
   }
 

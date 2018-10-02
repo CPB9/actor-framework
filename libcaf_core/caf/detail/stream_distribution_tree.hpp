@@ -82,7 +82,7 @@ public:
 
   void handle(inbound_path* path, downstream_msg::batch& x) override {
     CAF_LOG_TRACE(CAF_ARG(path) << CAF_ARG(x));
-    auto slot = path->slots.receiver;
+    auto slot = path->slts.receiver;
     policy_.before_handle_batch(slot, path->hdl);
     policy_.handle_batch(slot, path->hdl, x.xs);
     policy_.after_handle_batch(slot, path->hdl);
@@ -91,39 +91,39 @@ public:
   void handle(inbound_path* path, downstream_msg::close& x) override {
     CAF_LOG_TRACE(CAF_ARG(path) << CAF_ARG(x));
     CAF_IGNORE_UNUSED(x);
-    policy_.path_closed(path->slots.receiver);
+    policy_.path_closed(path->slts.receiver);
   }
 
   void handle(inbound_path* path, downstream_msg::forced_close& x) override {
     CAF_LOG_TRACE(CAF_ARG(path) << CAF_ARG(x));
-    policy_.path_force_closed(path->slots.receiver, x.reason);
+    policy_.path_force_closed(path->slts.receiver, x.reason);
   }
 
-  bool handle(stream_slots slots, upstream_msg::ack_open& x) override {
-    CAF_LOG_TRACE(CAF_ARG(slots) << CAF_ARG(x));
+  bool handle(stream_slots slts, upstream_msg::ack_open& x) override {
+    CAF_LOG_TRACE(CAF_ARG(slts) << CAF_ARG(x));
     auto rebind_from = x.rebind_from;
     auto rebind_to = x.rebind_to;
-    if (super::handle(slots, x)) {
-      policy_.ack_open_success(slots.receiver, rebind_from, rebind_to);
+    if (super::handle(slts, x)) {
+      policy_.ack_open_success(slts.receiver, rebind_from, rebind_to);
       return true;
     }
-    policy_.ack_open_failure(slots.receiver, rebind_from, rebind_to);
+    policy_.ack_open_failure(slts.receiver, rebind_from, rebind_to);
     return false;
   }
 
-  void handle(stream_slots slots, upstream_msg::drop& x) override {
-    CAF_LOG_TRACE(CAF_ARG(slots) << CAF_ARG(x));
+  void handle(stream_slots slts, upstream_msg::drop& x) override {
+    CAF_LOG_TRACE(CAF_ARG(slts) << CAF_ARG(x));
     CAF_IGNORE_UNUSED(x);
-    auto slot = slots.receiver;
-    if (out().remove_path(slots.receiver, none, true))
+    auto slot = slts.receiver;
+    if (out().remove_path(slts.receiver, none, true))
       policy_.path_dropped(slot);
   }
 
-  void handle(stream_slots slots, upstream_msg::forced_drop& x) override {
-    CAF_LOG_TRACE(CAF_ARG(slots) << CAF_ARG(x));
+  void handle(stream_slots slts, upstream_msg::forced_drop& x) override {
+    CAF_LOG_TRACE(CAF_ARG(slts) << CAF_ARG(x));
     CAF_IGNORE_UNUSED(x);
-    auto slot = slots.receiver;
-    if (out().remove_path(slots.receiver, x.reason, true))
+    auto slot = slts.receiver;
+    if (out().remove_path(slts.receiver, x.reason, true))
       policy_.path_force_dropped(slot, x.reason);
   }
 

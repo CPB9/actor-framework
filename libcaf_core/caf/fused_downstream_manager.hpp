@@ -265,7 +265,7 @@ protected:
   bool insert_path(unique_path_ptr ptr) override {
     CAF_LOG_TRACE(CAF_ARG(ptr));
     CAF_ASSERT(ptr != nullptr);
-    auto slot = ptr->slots.sender;
+    auto slot = ptr->slts.sender;
     return unassigned_paths_.emplace(slot, std::move(ptr)).second;
   }
 

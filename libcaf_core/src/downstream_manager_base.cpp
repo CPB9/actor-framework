@@ -62,7 +62,7 @@ void downstream_manager_base::clear_paths() {
 bool downstream_manager_base::insert_path(unique_path_ptr ptr) {
   CAF_LOG_TRACE(CAF_ARG(ptr));
   CAF_ASSERT(ptr != nullptr);
-  auto slot = ptr->slots.sender;
+  auto slot = ptr->slts.sender;
   CAF_ASSERT(slot != invalid_stream_slot);
   return paths_.emplace(slot, std::move(ptr)).second;
 }

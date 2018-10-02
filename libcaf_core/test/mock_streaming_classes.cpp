@@ -114,7 +114,7 @@ struct dmsg {
   struct close {
     // nop
   };
-  stream_slots slots;
+  stream_slots slts;
   variant<batch, close> content;
 };
 
@@ -128,7 +128,7 @@ struct umsg {
   struct drop {
     // nop
   };
-  stream_slots slots;
+  stream_slots slts;
   variant<ack_batch, ack_handshake, drop> content;
 };
 
@@ -160,9 +160,9 @@ struct manager {
     return (input_paths | output_paths) == 0;
   }
 
-  void push(entity* to, stream_slots slots, int num);
+  void push(entity* to, stream_slots slts, int num);
 
-  void operator()(entity* sender, stream_slots slots, in* path, dmsg::batch& x);
+  void operator()(entity* sender, stream_slots slts, in* path, dmsg::batch& x);
 };
 
 using manager_ptr = std::shared_ptr<manager>;
@@ -246,7 +246,7 @@ struct dmsg_queue_policy : policy_base {
   using queue_map_type = std::map<stream_slot, inner_dmsg_queue>;
 
   key_type id_of(const msg& x) {
-    return get<dmsg>(x.content).slots.receiver;
+    return get<dmsg>(x.content).slts.receiver;
   }
 
   template <class Queue>
@@ -282,11 +282,11 @@ template <class Target>
 struct dispatcher {
   Target& f;
   entity* sender;
-  stream_slots slots;
+  stream_slots slts;
 
   template <class T>
   void operator()(T&& x) {
-    f(sender, slots, std::forward<T>(x));
+    f(sender, slts, std::forward<T>(x));
   }
 };
 
@@ -334,16 +334,16 @@ struct entity {
     sender->enqueue<umsg>(this, id.invert(), umsg::ack_handshake{10});
   }
 
-  void operator()(entity* sender, stream_slots slots, umsg::ack_handshake& x) {
-    TRACE(name, ack_handshake, CAF_ARG(slots),
+  void operator()(entity* sender, stream_slots slts, umsg::ack_handshake& x) {
+    TRACE(name, ack_handshake, CAF_ARG(slts),
           CAF_ARG2("sender", sender->name));
     // Get the manager for that stream.
-    auto i = pending_managers_.find(slots.receiver);
+    auto i = pending_managers_.find(slts.receiver);
     CAF_REQUIRE_NOT_EQUAL(i, pending_managers_.end());
     // Create a new queue in the mailbox for incoming traffic.
     // Swap the sender/receiver perspective to generate the ID we are using.
-    managers_.emplace(slots, i->second);
-    i->second->push(sender, slots.invert(), x.credit);
+    managers_.emplace(slts, i->second);
+    i->second->push(sender, slts.invert(), x.credit);
     pending_managers_.erase(i);
   }
 
@@ -352,22 +352,22 @@ struct entity {
     TRACE(name, ack_batch, CAF_ARG(input_slots),
           CAF_ARG2("sender", sender->name));
     // Get the manager for that stream.
-    auto slots = input_slots.invert();
+    auto slts = input_slots.invert();
     auto i = managers_.find(input_slots);
     CAF_REQUIRE_NOT_EQUAL(i, managers_.end());
-    i->second->push(sender, slots, x.credit);
+    i->second->push(sender, slts, x.credit);
     if (i->second->done())
       managers_.erase(i);
   }
 
-  void operator()(entity* sender, stream_slots slots, in*, dmsg::close&) {
-    TRACE(name, close, CAF_ARG(slots), CAF_ARG2("sender", sender->name));
-    auto i = managers_.find(slots);
+  void operator()(entity* sender, stream_slots slts, in*, dmsg::close&) {
+    TRACE(name, close, CAF_ARG(slts), CAF_ARG2("sender", sender->name));
+    auto i = managers_.find(slts);
     CAF_REQUIRE_NOT_EQUAL(i, managers_.end());
     i->second->input_paths -= 1;
-    get<2>(mbox.queues()).erase_later(slots.receiver);
+    get<2>(mbox.queues()).erase_later(slts.receiver);
     if (i->second->done()) {
-      CAF_MESSAGE(name << " cleans up path " << deep_to_string(slots));
+      CAF_MESSAGE(name << " cleans up path " << deep_to_string(slts));
       managers_.erase(i);
     }
   }
@@ -388,33 +388,33 @@ struct entity {
   std::map<stream_slots, manager_ptr> managers_;
 };
 
-void manager::push(entity* to, stream_slots slots, int num) {
+void manager::push(entity* to, stream_slots slts, int num) {
   CAF_REQUIRE_NOT_EQUAL(num, 0);
   std::vector<int> xs;
   if (x + num > num_messages)
     num = num_messages - x;
   if (num == 0) {
     CAF_MESSAGE(self->name << " is done sending batches");
-    to->enqueue<dmsg>(self, slots, dmsg::close{});
+    to->enqueue<dmsg>(self, slts, dmsg::close{});
     output_paths -= 1;
     return;
   }
   CAF_MESSAGE(self->name << " pushes "
               << num << " new items to " << to->name
-              << " slots = " << deep_to_string(slots));
+              << " slots = " << deep_to_string(slts));
   for (int i = 0; i < num; ++i)
     xs.emplace_back(x++);
   CAF_REQUIRE_NOT_EQUAL(xs.size(), 0u);
-  auto emplace_res = to->enqueue<dmsg>(self, slots,
+  auto emplace_res = to->enqueue<dmsg>(self, slts,
                                        dmsg::batch{std::move(xs)});
   CAF_CHECK_EQUAL(emplace_res, true);
 }
 
-void manager::operator()(entity* sender, stream_slots slots, in*,
+void manager::operator()(entity* sender, stream_slots slts, in*,
                          dmsg::batch& batch) {
-  TRACE(self->name, batch, CAF_ARG(slots), CAF_ARG2("sender", sender->name),
+  TRACE(self->name, batch, CAF_ARG(slts), CAF_ARG2("sender", sender->name),
         CAF_ARG(batch.xs));
-  sender->enqueue<umsg>(self, slots.invert(), umsg::ack_batch{10});
+  sender->enqueue<umsg>(self, slts.invert(), umsg::ack_batch{10});
 }
 
 struct msg_visitor {
@@ -432,13 +432,13 @@ struct msg_visitor {
     auto& um = get<umsg>(x.content);
     auto f = detail::make_overload(
       [&](umsg::ack_handshake& y) {
-        (*self)(sender, um.slots, y);
+        (*self)(sender, um.slts, y);
       },
       [&](umsg::ack_batch& y) {
-        (*self)(sender, um.slots, y);
+        (*self)(sender, um.slts, y);
       },
       [&](umsg::drop&) {
-        //(*self)(sender, um.slots, y);
+        //(*self)(sender, um.slts, y);
       }
     );
     visit(f, um.content);
@@ -450,10 +450,10 @@ struct msg_visitor {
     auto dm = get<dmsg>(x.content);
     auto f = detail::make_overload(
       [&](dmsg::batch& y) {
-        (*inptr->mgr)(x.sender, dm.slots, inptr, y);
+        (*inptr->mgr)(x.sender, dm.slts, inptr, y);
       },
       [&](dmsg::close& y) {
-        (*self)(x.sender, dm.slots, inptr, y);
+        (*self)(x.sender, dm.slts, inptr, y);
       });
     visit(f, dm.content);
     return intrusive::task_result::resume;

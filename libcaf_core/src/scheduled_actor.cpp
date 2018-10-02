@@ -262,7 +262,7 @@ struct upstream_msg_visitor {
 
   template <class T>
   void operator()(T& x) {
-    selfptr->handle_upstream_msg(um.slots, um.sender, x);
+    selfptr->handle_upstream_msg(um.slts, um.sender, x);
   }
 };
 
@@ -298,15 +298,15 @@ struct downstream_msg_visitor {
     inptr->handle(x);
     // The sender slot can be 0. This is the case for forced_close or
     // forced_drop messages from stream aborters.
-    CAF_ASSERT(inptr->slots == dm.slots
-               || (dm.slots.sender == 0
-                   && dm.slots.receiver == inptr->slots.receiver));
+    CAF_ASSERT(inptr->slts == dm.slts
+               || (dm.slts.sender == 0
+                   && dm.slts.receiver == inptr->slts.receiver));
     // TODO: replace with `if constexpr` when switching to C++17
     if (std::is_same<T, downstream_msg::close>::value
         || std::is_same<T, downstream_msg::forced_close>::value) {
       inptr.reset();
-      qs_ref.erase_later(dm.slots.receiver);
-      selfptr->erase_stream_manager(dm.slots.receiver);
+      qs_ref.erase_later(dm.slts.receiver);
+      selfptr->erase_stream_manager(dm.slts.receiver);
       if (mgr->done()) {
         selfptr->erase_stream_manager(mgr);
         mgr->stop();
@@ -828,14 +828,14 @@ scheduled_actor::urgent_queue& scheduled_actor::get_urgent_queue() {
 }
 
 inbound_path* scheduled_actor::make_inbound_path(stream_manager_ptr mgr,
-                                                 stream_slots slots,
+                                                 stream_slots slts,
                                                  strong_actor_ptr sender) {
   using policy_type = policy::downstream_messages::nested;
   auto& qs = mailbox_.queue().queues();
-  auto res = get<2>(qs).queues().emplace(slots.receiver, policy_type{nullptr});
+  auto res = get<2>(qs).queues().emplace(slts.receiver, policy_type{nullptr});
   if (!res.second)
     return nullptr;
-  auto path = new inbound_path(std::move(mgr), slots, std::move(sender));
+  auto path = new inbound_path(std::move(mgr), slts, std::move(sender));
   res.first->second.policy().handler.reset(path);
   return path;
 }
@@ -891,26 +891,26 @@ void scheduled_actor::erase_inbound_paths_later(const stream_manager* ptr,
   }
 }
 
-void scheduled_actor::handle_upstream_msg(stream_slots slots,
+void scheduled_actor::handle_upstream_msg(stream_slots slts,
                                           actor_addr& sender,
                                           upstream_msg::ack_open& x) {
   CAF_IGNORE_UNUSED(sender);
-  CAF_LOG_TRACE(CAF_ARG(slots) << CAF_ARG(sender) << CAF_ARG(x));
+  CAF_LOG_TRACE(CAF_ARG(slts) << CAF_ARG(sender) << CAF_ARG(x));
   CAF_ASSERT(sender == x.rebind_to);
   // Get the manager for that stream, move it from `pending_managers_` to
   // `managers_`, and handle `x`.
-  auto i = pending_stream_managers_.find(slots.receiver);
+  auto i = pending_stream_managers_.find(slts.receiver);
   if (i == pending_stream_managers_.end()) {
     CAF_LOG_WARNING("found no corresponding manager for received ack_open");
     return;
   }
   auto ptr = std::move(i->second);
   pending_stream_managers_.erase(i);
-  if (!add_stream_manager(slots.receiver, ptr)) {
+  if (!add_stream_manager(slts.receiver, ptr)) {
     CAF_LOG_WARNING("unable to add stream manager after receiving ack_open");
     return;
   }
-  ptr->handle(slots, x);
+  ptr->handle(slts, x);
 }
 
 uint64_t scheduled_actor::set_timeout(atom_value type,

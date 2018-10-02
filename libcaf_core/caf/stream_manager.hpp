@@ -58,11 +58,11 @@ public:
 
   virtual bool handle(stream_slots, upstream_msg::ack_open& x);
 
-  virtual void handle(stream_slots slots, upstream_msg::ack_batch& x);
+  virtual void handle(stream_slots slts, upstream_msg::ack_batch& x);
 
-  virtual void handle(stream_slots slots, upstream_msg::drop& x);
+  virtual void handle(stream_slots slts, upstream_msg::drop& x);
 
-  virtual void handle(stream_slots slots, upstream_msg::forced_drop& x);
+  virtual void handle(stream_slots slts, upstream_msg::forced_drop& x);
 
   /// Closes all output and input paths and sends the final result to the
   /// client.

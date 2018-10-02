@@ -737,7 +737,7 @@ public:
 
   /// Creates a new path for incoming stream traffic from `sender`.
   virtual inbound_path* make_inbound_path(stream_manager_ptr mgr,
-                                          stream_slots slots,
+                                          stream_slots slts,
                                           strong_actor_ptr sender);
 
   /// Silently closes incoming stream traffic on `slot`.
@@ -758,34 +758,34 @@ public:
 
   // -- handling of stream messages --------------------------------------------
 
-  void handle_upstream_msg(stream_slots slots, actor_addr& sender,
+  void handle_upstream_msg(stream_slots slts, actor_addr& sender,
                            upstream_msg::ack_open& x);
 
   template <class T>
-  void handle_upstream_msg(stream_slots slots, actor_addr& sender, T& x) {
-    CAF_LOG_TRACE(CAF_ARG(slots) << CAF_ARG(sender) << CAF_ARG(x));
+  void handle_upstream_msg(stream_slots slts, actor_addr& sender, T& x) {
+    CAF_LOG_TRACE(CAF_ARG(slts) << CAF_ARG(sender) << CAF_ARG(x));
     CAF_IGNORE_UNUSED(sender);
-    auto i = stream_managers_.find(slots.receiver);
+    auto i = stream_managers_.find(slts.receiver);
     if (i == stream_managers_.end()) {
-      auto j = pending_stream_managers_.find(slots.receiver);
+      auto j = pending_stream_managers_.find(slts.receiver);
       if (j != pending_stream_managers_.end()) {
         j->second->abort(sec::stream_init_failed);
         pending_stream_managers_.erase(j);
         return;
       }
-      CAF_LOG_INFO("no manager found:" << CAF_ARG(slots));
+      CAF_LOG_INFO("no manager found:" << CAF_ARG(slts));
       // TODO: replace with `if constexpr` when switching to C++17
       if (std::is_same<T, upstream_msg::ack_batch>::value) {
         // Make sure the other actor does not falsely believe us a source.
-        inbound_path::emit_irregular_shutdown(this, slots, current_sender(),
+        inbound_path::emit_irregular_shutdown(this, slts, current_sender(),
                                               sec::invalid_upstream);
       }
       return;
     }
     CAF_ASSERT(i->second != nullptr);
-    i->second->handle(slots, x);
+    i->second->handle(slts, x);
     if (i->second->done()) {
-      CAF_LOG_INFO("done sending:" << CAF_ARG(slots));
+      CAF_LOG_INFO("done sending:" << CAF_ARG(slts));
       i->second->stop();
       stream_managers_.erase(i);
       if (stream_managers_.empty())

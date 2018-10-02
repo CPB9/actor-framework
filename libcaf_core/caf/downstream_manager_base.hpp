@@ -60,10 +60,10 @@ public:
 
   size_t num_paths() const noexcept override;
 
-  bool remove_path(stream_slot slots, error reason,
+  bool remove_path(stream_slot slts, error reason,
                    bool silent) noexcept override;
 
-  path_ptr path(stream_slot slots) noexcept override;
+  path_ptr path(stream_slot slts) noexcept override;
 
   void clear_paths() override;
 

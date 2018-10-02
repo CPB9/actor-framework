@@ -117,7 +117,7 @@ public:
     auto ptr = mgr.out().add_path(next_slot++, x.ctrl());
     CAF_REQUIRE(ptr != nullptr);
     ptr->desired_batch_size = desired_batch_size;
-    ptr->slots.receiver = x.next_slot++;
+    ptr->slts.receiver = x.next_slot++;
     paths.emplace_back(ptr);
   }
 

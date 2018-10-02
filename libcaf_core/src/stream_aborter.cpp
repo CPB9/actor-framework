@@ -37,16 +37,16 @@ void stream_aborter::actor_exited(const error& rsn, execution_unit* host) {
   CAF_ASSERT(observed_ != observer_);
   auto observer = actor_cast<strong_actor_ptr>(observer_);
   if (observer != nullptr) {
-    stream_slots slots{0, slot_};
+    stream_slots slts{0, slot_};
     mailbox_element_ptr ptr;
     if (mode_ == source_aborter) {
       using msg_type = downstream_msg::forced_close;
       ptr = make_mailbox_element(nullptr, make_message_id(), no_stages,
-                                 caf::make<msg_type>(slots, observed_, rsn));
+                                 caf::make<msg_type>(slts, observed_, rsn));
     } else {
       using msg_type = upstream_msg::forced_drop;
       ptr = make_mailbox_element(nullptr, make_message_id(), no_stages,
-                                 caf::make<msg_type>(slots, observed_, rsn));
+                                 caf::make<msg_type>(slts, observed_, rsn));
     }
     observer->enqueue(std::move(ptr), host);
   }

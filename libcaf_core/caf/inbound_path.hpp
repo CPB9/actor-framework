@@ -50,7 +50,7 @@ public:
   strong_actor_ptr hdl;
 
   /// Stores slot IDs for sender (hdl) and receiver (self).
-  stream_slots slots;
+  stream_slots slts;
 
   /// Stores the last computed desired batch size.
   int32_t desired_batch_size;
@@ -151,7 +151,7 @@ public:
   void emit_irregular_shutdown(local_actor* self, error reason);
 
   /// Sends an `upstream_msg::forced_drop`.
-  static void emit_irregular_shutdown(local_actor* self, stream_slots slots,
+  static void emit_irregular_shutdown(local_actor* self, stream_slots slts,
                                       const strong_actor_ptr& hdl,
                                       error reason);
 };
@@ -159,7 +159,7 @@ public:
 /// @relates inbound_path
 template <class Inspector>
 typename Inspector::return_type inspect(Inspector& f, inbound_path& x) {
-  return f(meta::type_name("inbound_path"), x.hdl, x.slots, x.prio,
+  return f(meta::type_name("inbound_path"), x.hdl, x.slts, x.prio,
            x.last_acked_batch_id, x.last_batch_id, x.assigned_credit);
 }
 

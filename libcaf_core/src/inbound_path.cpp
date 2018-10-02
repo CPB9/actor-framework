@@ -70,7 +70,7 @@ inbound_path::inbound_path(stream_manager_ptr mgr_ptr, stream_slots id,
                            strong_actor_ptr ptr)
     : mgr(std::move(mgr_ptr)),
       hdl(std::move(ptr)),
-      slots(id),
+      slts(id),
       desired_batch_size(initial_credit),
       assigned_credit(0),
       prio(stream_priority::normal),
@@ -84,7 +84,7 @@ inbound_path::~inbound_path() {
 }
 
 void inbound_path::handle(downstream_msg::batch& x) {
-  CAF_LOG_TRACE(CAF_ARG(slots) << CAF_ARG(x));
+  CAF_LOG_TRACE(CAF_ARG(slts) << CAF_ARG(x));
   auto batch_size = x.xs_size;
   assigned_credit -= batch_size;
   last_batch_id = x.id;
@@ -98,22 +98,22 @@ void inbound_path::handle(downstream_msg::batch& x) {
 }
 
 void inbound_path::emit_ack_open(local_actor* self, actor_addr rebind_from) {
-  CAF_LOG_TRACE(CAF_ARG(slots) << CAF_ARG(rebind_from));
+  CAF_LOG_TRACE(CAF_ARG(slts) << CAF_ARG(rebind_from));
   // Update state.
   assigned_credit = mgr->acquire_credit(this, initial_credit);
   // Make sure we receive errors from this point on.
-  stream_aborter::add(hdl, self->address(), slots.receiver,
+  stream_aborter::add(hdl, self->address(), slts.receiver,
                       stream_aborter::source_aborter);
   // Send message.
   unsafe_send_as(self, hdl,
                  make<upstream_msg::ack_open>(
-                   slots.invert(), self->address(), std::move(rebind_from),
+                   slts.invert(), self->address(), std::move(rebind_from),
                    self->ctrl(), assigned_credit, desired_batch_size));
 }
 
 void inbound_path::emit_ack_batch(local_actor* self, int32_t queued_items,
                                   timespan cycle, timespan complexity) {
-  CAF_LOG_TRACE(CAF_ARG(slots) << CAF_ARG(queued_items) << CAF_ARG(cycle)
+  CAF_LOG_TRACE(CAF_ARG(slts) << CAF_ARG(queued_items) << CAF_ARG(cycle)
                 << CAF_ARG(complexity));
   auto x = stats.calculate(cycle, complexity);
   // Hand out enough credit to fill our queue for 2 cycles.
@@ -130,7 +130,7 @@ void inbound_path::emit_ack_batch(local_actor* self, int32_t queued_items,
     assigned_credit += credit;
   CAF_LOG_DEBUG(CAF_ARG(credit) << CAF_ARG(desired_batch_size));
   unsafe_send_as(self, hdl,
-                 make<upstream_msg::ack_batch>(slots.invert(),
+                 make<upstream_msg::ack_batch>(slts.invert(),
                                                self->address(),
                                                static_cast<int32_t>(credit),
                                                desired_batch_size,
@@ -143,30 +143,30 @@ bool inbound_path::up_to_date() {
 }
 
 void inbound_path::emit_regular_shutdown(local_actor* self) {
-  CAF_LOG_TRACE(CAF_ARG(slots));
+  CAF_LOG_TRACE(CAF_ARG(slts));
   unsafe_send_as(self, hdl,
-                 make<upstream_msg::drop>(slots.invert(), self->address()));
+                 make<upstream_msg::drop>(slts.invert(), self->address()));
 }
 
 void inbound_path::emit_irregular_shutdown(local_actor* self, error reason) {
-  CAF_LOG_TRACE(CAF_ARG(slots) << CAF_ARG(reason));
+  CAF_LOG_TRACE(CAF_ARG(slts) << CAF_ARG(reason));
   /// Note that we always send abort messages anonymous. They can get send
   /// after `self` already terminated and we must not form strong references
   /// after that point. Since upstream messages contain the sender address
   /// anyway, we only omit redundant information anyways.
   anon_send(actor_cast<actor>(hdl),
-            make<upstream_msg::forced_drop>(slots.invert(), self->address(),
+            make<upstream_msg::forced_drop>(slts.invert(), self->address(),
                                             std::move(reason)));
 }
 
 void inbound_path::emit_irregular_shutdown(local_actor* self,
-                                           stream_slots slots,
+                                           stream_slots slts,
                                            const strong_actor_ptr& hdl,
                                            error reason) {
   /// Note that we always send abort messages anonymous. See reasoning in first
   /// function overload.
   anon_send(actor_cast<actor>(hdl),
-            make<upstream_msg::forced_drop>(slots.invert(), self->address(),
+            make<upstream_msg::forced_drop>(slts.invert(), self->address(),
                                             std::move(reason)));
 }
 } // namespace caf

@@ -103,7 +103,7 @@ public:
   template <class T>
   void emit_batches(local_actor* self, std::vector<T>& cache,
                     bool force_underfull) {
-    CAF_LOG_TRACE(CAF_ARG(slots) << CAF_ARG(open_credit) << CAF_ARG(cache)
+    CAF_LOG_TRACE(CAF_ARG(slts) << CAF_ARG(open_credit) << CAF_ARG(cache)
                   << CAF_ARG(force_underfull));
     if (pending())
       return;
@@ -129,7 +129,7 @@ public:
   void emit_irregular_shutdown(local_actor* self, error reason);
 
   /// Sends a `downstream_msg::forced_close`.
-  static void emit_irregular_shutdown(local_actor* self, stream_slots slots,
+  static void emit_irregular_shutdown(local_actor* self, stream_slots slts,
                                       const strong_actor_ptr& hdl,
                                       error reason);
 
@@ -138,7 +138,7 @@ public:
   /// Returns whether this path is pending, i.e., didn't receive an `ack_open`
   /// yet.
   inline bool pending() const noexcept {
-    return slots.receiver == invalid_stream_slot;
+    return slts.receiver == invalid_stream_slot;
   }
 
   /// Returns whether no pending ACKs exist.
@@ -149,7 +149,7 @@ public:
   // -- member variables -------------------------------------------------------
 
   /// Slot IDs for sender (self) and receiver (hdl).
-  stream_slots slots;
+  stream_slots slts;
 
   /// Handle to the sink.
   strong_actor_ptr hdl;
@@ -178,7 +178,7 @@ public:
 /// @relates outbound_path
 template <class Inspector>
 typename Inspector::result_type inspect(Inspector& f, outbound_path& x) {
-  return f(meta::type_name("outbound_path"), x.slots, x.hdl, x.next_batch_id,
+  return f(meta::type_name("outbound_path"), x.slts, x.hdl, x.next_batch_id,
            x.open_credit, x.desired_batch_size, x.next_ack_id);
 }
 

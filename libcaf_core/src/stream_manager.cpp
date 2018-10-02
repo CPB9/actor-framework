@@ -57,16 +57,16 @@ void stream_manager::handle(inbound_path*, downstream_msg::close&) {
 
 void stream_manager::handle(inbound_path* in, downstream_msg::forced_close& x) {
   CAF_ASSERT(in != nullptr);
-  CAF_LOG_TRACE(CAF_ARG2("slots", in->slots) << CAF_ARG(x));
+  CAF_LOG_TRACE(CAF_ARG2("slots", in->slts) << CAF_ARG(x));
   // Reset the actor handle to make sure no further message travels upstream.
   in->hdl = nullptr;
   abort(std::move(x.reason));
 }
 
-bool stream_manager::handle(stream_slots slots, upstream_msg::ack_open& x) {
-  CAF_LOG_TRACE(CAF_ARG(slots) << CAF_ARG(x));
+bool stream_manager::handle(stream_slots slts, upstream_msg::ack_open& x) {
+  CAF_LOG_TRACE(CAF_ARG(slts) << CAF_ARG(x));
   CAF_ASSERT(x.desired_batch_size > 0);
-  auto ptr = out().path(slots.receiver);
+  auto ptr = out().path(slts.receiver);
   if (ptr == nullptr)
     return false;
   if (!ptr->pending()) {
@@ -80,7 +80,7 @@ bool stream_manager::handle(stream_slots slots, upstream_msg::ack_open& x) {
   if (x.rebind_from != x.rebind_to) {
     ptr->hdl = x.rebind_to;
   }
-  ptr->slots.receiver = slots.sender;
+  ptr->slts.receiver = slts.sender;
   ptr->open_credit = x.initial_demand;
   ptr->desired_batch_size = x.desired_batch_size;
   --pending_handshakes_;
@@ -88,28 +88,28 @@ bool stream_manager::handle(stream_slots slots, upstream_msg::ack_open& x) {
   return true;
 }
 
-void stream_manager::handle(stream_slots slots, upstream_msg::ack_batch& x) {
-  CAF_LOG_TRACE(CAF_ARG(slots) << CAF_ARG(x));
+void stream_manager::handle(stream_slots slts, upstream_msg::ack_batch& x) {
+  CAF_LOG_TRACE(CAF_ARG(slts) << CAF_ARG(x));
   CAF_ASSERT(x.desired_batch_size > 0);
-  auto path = out().path(slots.receiver);
+  auto path = out().path(slts.receiver);
   if (path != nullptr) {
     path->open_credit += x.new_capacity;
     path->desired_batch_size = x.desired_batch_size;
     path->next_ack_id = x.acknowledged_id + 1;
     // Gravefully remove path after receiving its final ACK.
-    if (path->closing && out().clean(slots.receiver))
-      out().remove_path(slots.receiver, none, false);
+    if (path->closing && out().clean(slts.receiver))
+      out().remove_path(slts.receiver, none, false);
     push();
   }
 }
 
-void stream_manager::handle(stream_slots slots, upstream_msg::drop&) {
+void stream_manager::handle(stream_slots slts, upstream_msg::drop&) {
   error tmp;
-  out().remove_path(slots.receiver, std::move(tmp), true);
+  out().remove_path(slts.receiver, std::move(tmp), true);
 }
 
-void stream_manager::handle(stream_slots slots, upstream_msg::forced_drop& x) {
-  if (out().remove_path(slots.receiver, x.reason, true))
+void stream_manager::handle(stream_slots slts, upstream_msg::forced_drop& x) {
+  if (out().remove_path(slts.receiver, x.reason, true))
     abort(std::move(x.reason));
 }
 
@@ -211,7 +211,7 @@ void stream_manager::remove_input_path(stream_slot slot, error reason,
 
 inbound_path* stream_manager::get_inbound_path(stream_slot x) const noexcept {
   auto pred = [=](inbound_path* ptr) {
-    return ptr->slots.receiver == x;
+    return ptr->slts.receiver == x;
   };
   auto e = inbound_paths_.end();
   auto i = std::find_if(inbound_paths_.begin(), e, pred);
