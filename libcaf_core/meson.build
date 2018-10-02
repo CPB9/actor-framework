@@ -121,10 +121,10 @@ src = [
 
 subdir('caf/detail')
 
-libtype = 'shared_library'
-if system == 'windows'
+#libtype = 'shared_library'
+#if system == 'windows'
   libtype = 'static_library'
-endif
+#endif
 
 libcaf_core_lib = build_target('caf_core',
   name_prefix : 'lib',
