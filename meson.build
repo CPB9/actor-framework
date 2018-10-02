@@ -1,4 +1,4 @@
-project('caf', 'cpp', default_options : ['cpp_std=c++11'], version : '0.15.5')
+project('caf', 'cpp', default_options : ['cpp_std=c++11'], version : '0.16.0')
 
 cc = meson.get_compiler('cpp')
 
@@ -14,7 +14,7 @@ endif
 
 shared_deps = [dependency('threads')]
 
-system = target_machine.system()
+system = host_machine.system()
 
 if system == 'windows' and cc_id == 'gcc'
   cflags += ['-D_WIN32_WINNT=0x0600', '-DWIN32']
