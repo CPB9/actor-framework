@@ -768,20 +768,26 @@ expected<native_socket>
 new_tcp_connection(const std::string& host, uint16_t port,
                    optional<protocol::network> preferred) {
   CAF_LOG_TRACE(CAF_ARG(host) << CAF_ARG(port) << CAF_ARG(preferred));
-  CAF_LOG_INFO("try to connect to:" << CAF_ARG(host) << CAF_ARG(port));
+  CAF_LOG_DEBUG("try to connect to:" << CAF_ARG(host) << CAF_ARG(port));
   auto res = interfaces::native_address(host, std::move(preferred));
   if (!res) {
-    CAF_LOG_INFO("no such host");
+    CAF_LOG_DEBUG("no such host");
     return make_error(sec::cannot_connect_to_node, "no such host", host, port);
   }
   auto proto = res->second;
   CAF_ASSERT(proto == ipv4 || proto == ipv6);
+  int socktype = SOCK_STREAM;
+#ifdef SOCK_CLOEXEC
+  socktype |= SOCK_CLOEXEC;
+#endif
   CALL_CFUN(fd, detail::cc_valid_socket, "socket",
-            socket(proto == ipv4 ? AF_INET : AF_INET6, SOCK_STREAM, 0));
+            socket(proto == ipv4 ? AF_INET : AF_INET6, socktype, 0));
+  child_process_inherit(fd, false);
   detail::socket_guard sguard(fd);
   if (proto == ipv6) {
     if (ip_connect<AF_INET6>(fd, res->first, port)) {
-      CAF_LOG_INFO("successfully connected to host via IPv6");
+      CAF_LOG_INFO("successfully connected to (IPv6):"
+                  << CAF_ARG(host) << CAF_ARG(port));
       return sguard.release();
     }
     sguard.close();
@@ -789,11 +795,12 @@ new_tcp_connection(const std::string& host, uint16_t port,
     return new_tcp_connection(host, port, ipv4);
   }
   if (!ip_connect<AF_INET>(fd, res->first, port)) {
-    CAF_LOG_INFO("could not connect to:" << CAF_ARG(host) << CAF_ARG(port));
+    CAF_LOG_WARNING("could not connect to:" << CAF_ARG(host) << CAF_ARG(port));
     return make_error(sec::cannot_connect_to_node,
                       "ip_connect failed", host, port);
   }
-  CAF_LOG_INFO("successfully connected to host via IPv4");
+  CAF_LOG_INFO("successfully connected to (IPv4):"
+              << CAF_ARG(host) << CAF_ARG(port));
   return sguard.release();
 }
 
@@ -826,7 +833,12 @@ expected<native_socket> new_ip_acceptor_impl(uint16_t port, const char* addr,
                                              bool reuse_addr, bool any) {
   static_assert(Family == AF_INET || Family == AF_INET6, "invalid family");
   CAF_LOG_TRACE(CAF_ARG(port) << ", addr = " << (addr ? addr : "nullptr"));
-  CALL_CFUN(fd, detail::cc_valid_socket, "socket", socket(Family, SockType, 0));
+  int socktype = SockType;
+#ifdef SOCK_CLOEXEC
+  socktype |= SOCK_CLOEXEC;
+#endif
+  CALL_CFUN(fd, detail::cc_valid_socket, "socket", socket(Family, socktype, 0));
+  child_process_inherit(fd, false);
   // sguard closes the socket in case of exception
   detail::socket_guard sguard{fd};
   if (reuse_addr) {

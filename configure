@@ -25,6 +25,7 @@ Usage: $0 [OPTION]... [VAR=VALUE]...
                                   - MinSizeRel: minimal output size
                                   - Release: optimizations on, debugging off
                                   - RelWithDebInfo: release flags plus debugging
+    --extra-flags=STRING        additional compiler flags
     --build-dir=DIR             place build files in directory [build]
     --bin-dir=DIR               executable directory [build/bin]
     --lib-dir=DIR               library directory [build/lib]
@@ -44,9 +45,10 @@ Usage: $0 [OPTION]... [VAR=VALUE]...
     --warnings-as-errors        build with '-Werror'
     --with-ccache               use ccache to improve build performance
 
-  Additional Examples:
-    --with-qt-examples          include Qt example(s)
-    --with-protobuf-examples    include Google Protobuf example(s)
+  Optional Targets:
+    --with-qt-examples          build Qt example(s)
+    --with-protobuf-examples    build Google Protobuf example(s)
+    --with-tex-manual           build the LaTeX manual
 
   Installation Directories:
     --prefix=PREFIX             installation directory [/usr/local]
@@ -58,13 +60,14 @@ Usage: $0 [OPTION]... [VAR=VALUE]...
     --no-unit-tests             build without unit tests
     --no-opencl                 build without OpenCL module
     --no-openssl                build without OpenSSL module
-    --no-benchmarks             build without benchmarks
     --no-tools                  build without CAF tools such as caf-run
     --no-io                     build without I/O module
     --no-python                 build without python binding
     --no-summary                do not print configuration before building
-    --core-only                 sets no-examples, no-opencl, no-openssl,
-                                no-tools, no-python, and no-io
+    --libs-only                 sets no-examples, no-tools, no-python,
+                                and no-unit-tests
+    --core-only                 same as libs-only but also adds sets no-opencl,
+                                no-openssl, and no-io
 
   Debugging:
     --with-runtime-checks       build with requirement checks at runtime
@@ -86,7 +89,7 @@ Usage: $0 [OPTION]... [VAR=VALUE]...
 
   Influential Environment Variables (only on first invocation):
     CXX                         C++ compiler command
-    CXXFLAGS                    C++ compiler flags
+    CXXFLAGS                    C++ compiler flags (overrides defaults)
     LDFLAGS                     Additional linker flags
     CMAKE_GENERATOR     Selects a custom generator
 
@@ -280,28 +283,7 @@ while [ $# -ne 0 ]; do
             append_cache_entry CAF_IOS_DEPLOYMENT_TARGET STRING "$optarg"
             ;;
         --with-log-level=*)
-            level=`echo "$optarg" | tr '[:lower:]' '[:upper:]'`
-            case $level in
-                ERROR)
-                    append_cache_entry CAF_LOG_LEVEL STRING 0
-                    ;;
-                WARNING)
-                    append_cache_entry CAF_LOG_LEVEL STRING 1
-                    ;;
-                INFO)
-                    append_cache_entry CAF_LOG_LEVEL STRING 2
-                    ;;
-                DEBUG)
-                    append_cache_entry CAF_LOG_LEVEL STRING 3
-                    ;;
-                TRACE)
-                    append_cache_entry CAF_LOG_LEVEL STRING 4
-                    ;;
-                *)
-                    echo "Invalid log level '$level'. Try '$0 --help' to see valid values."
-                    exit 1
-                    ;;
-            esac
+            append_cache_entry CAF_LOG_LEVEL STRING "$optarg"
             ;;
         --with-clang=*)
             clang="$optarg"
@@ -317,6 +299,9 @@ while [ $# -ne 0 ]; do
             ;;
         --build-type=*)
             append_cache_entry CMAKE_BUILD_TYPE STRING "$optarg"
+            ;;
+        --extra-flags=*)
+            append_cache_entry EXTRA_FLAGS STRING "$optarg"
             ;;
         --build-dir=*)
             builddir="$optarg"
@@ -338,6 +323,9 @@ while [ $# -ne 0 ]; do
             ;;
         --with-protobuf-examples)
             append_cache_entry CAF_BUILD_PROTOBUF_EXAMPLES BOOL yes
+            ;;
+        --with-tex-manual)
+            append_cache_entry CAF_BUILD_TEX_MANUAL BOOL yes
             ;;
         --no-curl-examples)
             append_cache_entry CAF_NO_CURL_EXAMPLES BOOL yes
@@ -363,9 +351,6 @@ while [ $# -ne 0 ]; do
         --with-python-config=*)
             append_cache_entry CAF_PYTHON_CONFIG_BIN FILEPATH "$optarg"
             ;;
-        --no-benchmarks)
-            append_cache_entry CAF_NO_BENCHMARKS BOOL yes
-            ;;
         --no-tools)
             append_cache_entry CAF_NO_TOOLS BOOL yes
             ;;
@@ -378,19 +363,21 @@ while [ $# -ne 0 ]; do
         --no-summary)
             append_cache_entry CAF_NO_SUMMARY BOOL yes
             ;;
+        --libs-only)
+            for var in CAF_NO_TOOLS CAF_NO_PYTHON CAF_NO_EXAMPLES  CAF_NO_UNIT_TESTS; do
+              append_cache_entry $var BOOL yes
+            done
+            ;;
         --core-only)
-            append_cache_entry CAF_NO_TOOLS BOOL yes
-            append_cache_entry CAF_NO_IO BOOL yes
-            append_cache_entry CAF_NO_PYTHON BOOL yes
-            append_cache_entry CAF_NO_EXAMPLES BOOL yes
-            append_cache_entry CAF_NO_OPENCL BOOL yes
-            append_cache_entry CAF_NO_OPENSSL BOOL yes
+            for var in CAF_NO_TOOLS CAF_NO_PYTHON CAF_NO_EXAMPLES  CAF_NO_UNIT_TESTS CAF_NO_IO CAF_NO_OPENCL CAF_NO_OPENSSL ; do
+              append_cache_entry $var BOOL yes
+            done
             ;;
         --dev-mode)
             append_cache_entry CMAKE_BUILD_TYPE STRING Debug
             append_cache_entry CAF_NO_EXAMPLES BOOL yes
             append_cache_entry CAF_NO_TOOLS BOOL yes
-            append_cache_entry CAF_LOG_LEVEL STRING 4
+            append_cache_entry CAF_LOG_LEVEL STRING TRACE
             append_cache_entry CAF_ENABLE_RUNTIME_CHECKS BOOL yes
             append_cache_entry CAF_ENABLE_ADDRESS_SANITIZER BOOL yes
             ;;
@@ -429,37 +416,3 @@ else
 
     configure "$compiler" "" "$bindir" "$libdir" "$CMakeGenerator"
 fi
-
-if [ -n "$CMakeGenerator" ] && [ "$CMakeGenerator" != "Unix" ]; then
-  # skip Makefile-specific code below when not using make
-  exit 0
-fi
-
-printf "DIRS := %s\n\n" "$workdirs" > $sourcedir/Makefile
-makefile=`cat <<'EOT'
-all:
-	@for i in $(DIRS); do $(MAKE) -C $$i $@ || exit; done
-
-test:
-	@for i in $(DIRS); do $(MAKE) -C $$i $@ || exit; done
-
-install:
-	@for i in $(DIRS); do $(MAKE) -C $$i $@ || exit; done
-
-uninstall:
-	@for i in $(DIRS); do $(MAKE) -C $$i $@ || exit; done
-
-clean:
-	@for i in $(DIRS); do $(MAKE) -C $$i $@; done
-
-distclean:
-	rm -rf $(DIRS) Makefile
-
-doc:
-	$(MAKE) -C $(firstword $(DIRS)) $@
-
-.PHONY: all test install uninstall clean distclean doc
-EOT
-`
-
-echo "$makefile" >> $sourcedir/Makefile

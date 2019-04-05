@@ -23,6 +23,7 @@
 #include <type_traits>
 
 #include "caf/detail/atom_val.hpp"
+#include "caf/fwd.hpp"
 
 namespace caf {
 
@@ -36,7 +37,10 @@ enum class atom_value : uint64_t {
 /// @relates atom_value
 std::string to_string(const atom_value& what);
 
-atom_value atom_from_string(const std::string& x);
+/// @relates atom_value
+atom_value to_lowercase(atom_value x);
+
+atom_value atom_from_string(string_view x);
 
 /// Creates an atom from given string literal.
 template <size_t Size>
@@ -65,13 +69,22 @@ struct atom_constant {
   constexpr atom_constant() {
     // nop
   }
+
   /// Returns the wrapped value.
   constexpr operator atom_value() const {
     return V;
   }
+
+  /// Returns the wrapped value as its base type.
   static constexpr uint64_t uint_value() {
     return static_cast<uint64_t>(V);
   }
+
+  /// Returns the wrapped value.
+  static constexpr atom_value get_value() {
+    return V;
+  }
+
   /// Returns an instance *of this constant* (*not* an `atom_value`).
   static const atom_constant value;
 };

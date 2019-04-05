@@ -78,7 +78,7 @@ public:
   /// Tries to publish `whom` at `port` and returns either an
   /// `error` or the bound port.
   /// @param whom Actor that should be published at `port`.
-  /// @param port Unused TCP port.
+  /// @param port Unused UDP port.
   /// @param in The IP address to listen to or `INADDR_ANY` if `in == nullptr`.
   /// @param reuse Create socket using `SO_REUSEADDR`.
   /// @returns The actual port the OS uses after `bind()`. If `port == 0`
@@ -132,7 +132,7 @@ public:
 
   /// Contacts the actor at `host` on given `port`.
   /// @param host Valid hostname or IP address.
-  /// @param port TCP port.
+  /// @param port UDP port.
   /// @returns An `actor` to the proxy instance representing
   ///          a remote actor or an `error`.
   template <class ActorHandle = actor>
@@ -255,8 +255,14 @@ public:
             class F = std::function<void(broker*)>, class... Ts>
   typename infer_handle_from_fun<F>::type
   spawn_broker(F fun, Ts&&... xs) {
+    using impl = infer_impl_from_fun_t<F>;
+    static constexpr bool spawnable = detail::spawnable<F, impl, Ts...>();
+    static_assert(spawnable,
+                  "cannot spawn function-based broker with given arguments");
     actor_config cfg{&backend()};
-    return system().spawn_functor<Os>(cfg, fun, std::forward<Ts>(xs)...);
+    detail::bool_token<spawnable> enabled;
+    return system().spawn_functor<Os>(enabled, cfg, fun,
+                                      std::forward<Ts>(xs)...);
   }
 
   /// Returns a new functor-based broker connected

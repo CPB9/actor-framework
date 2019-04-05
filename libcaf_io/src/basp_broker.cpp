@@ -52,16 +52,6 @@ struct seq_num_visitor {
   basp_broker_state* state;
 };
 
-struct close_visitor {
-  using result_type = void;
-  close_visitor(broker* ptr) : b(ptr) { }
-  template <class T>
-  result_type operator()(const T& hdl) {
-    b->close(hdl);
-  }
-  broker* b;
-};
-
 } // namespace anonymous
 
 const char* basp_broker_state::name = "basp_broker";
@@ -106,8 +96,8 @@ strong_actor_ptr basp_broker_state::make_proxy(node_id nid, actor_id aid) {
   if (!path) {
     // this happens if and only if we don't have a path to `nid`
     // and current_context_->hdl has been blacklisted
-    CAF_LOG_INFO("cannot create a proxy instance for an actor "
-                 "running on a node we don't have a route to");
+    CAF_LOG_DEBUG("cannot create a proxy instance for an actor "
+                  "running on a node we don't have a route to");
     return nullptr;
   }
   // create proxy and add functor that will be called if we
@@ -127,9 +117,9 @@ strong_actor_ptr basp_broker_state::make_proxy(node_id nid, actor_id aid) {
         bptr->state.proxies().erase(nid, res->id(), rsn);
     });
   });
-  CAF_LOG_INFO("successfully created proxy instance, "
-               "write announce_proxy_instance:"
-               << CAF_ARG(nid) << CAF_ARG(aid));
+  CAF_LOG_DEBUG("successfully created proxy instance, "
+                "write announce_proxy_instance:"
+                << CAF_ARG(nid) << CAF_ARG(aid));
   auto& ctx = *this_context;
   // tell remote side we are monitoring this actor now
   instance.write_announce_proxy(self->context(),
@@ -159,7 +149,7 @@ void basp_broker_state::finalize_handshake(const node_id& nid, actor_id aid,
     if (nid == this_node()) {
       // connected to self
       ptr = actor_cast<strong_actor_ptr>(system().registry().get(aid));
-      CAF_LOG_INFO_IF(!ptr, "actor not found:" << CAF_ARG(aid));
+      CAF_LOG_DEBUG_IF(!ptr, "actor not found:" << CAF_ARG(aid));
     } else {
       ptr = namespace_.get_or_put(nid, aid);
       CAF_LOG_ERROR_IF(!ptr, "creating actor in finalize_handshake failed");
@@ -181,8 +171,6 @@ void basp_broker_state::purge_state(const node_id& nid) {
 void basp_broker_state::send_kill_proxy_instance(const node_id& nid,
                                                  actor_id aid, error rsn) {
   CAF_LOG_TRACE(CAF_ARG(nid) << CAF_ARG(aid) << CAF_ARG(rsn));
-  if (rsn == none)
-    rsn = exit_reason::unknown;
   auto path = instance.tbl().lookup(nid);
   if (!path) {
     CAF_LOG_INFO("cannot send exit message for proxy, no route to host:"
@@ -304,7 +292,7 @@ void basp_broker_state::deliver(const node_id& src_nid, actor_id src_aid,
     self->parent().notify<hook::invalid_message_received>(src_nid, src,
                                                           invalid_actor_id,
                                                           mid, msg);
-    if (mid.valid() && src) {
+    if (mid.is_request() && src != nullptr) {
       detail::sync_request_bouncer srb{rsn};
       srb(src, mid);
     }
@@ -374,7 +362,8 @@ void basp_broker_state::learned_new_node(const node_id& nid) {
   // send message to SpawnServ of remote node
   basp::header hdr{basp::message_type::dispatch_message,
                    basp::header::named_receiver_flag,
-                   0, 0, this_node(), nid, tmp.id(), invalid_actor_id,
+                   0, make_message_id().integer_value(), this_node(), nid,
+                   tmp.id(), invalid_actor_id,
                    visit(seq_num_visitor{this}, path->hdl)};
   // writing std::numeric_limits<actor_id>::max() is a hack to get
   // this send-to-named-actor feature working with older CAF releases
@@ -424,7 +413,8 @@ void basp_broker_state::learned_new_node_indirectly(const node_id& nid) {
     });
     basp::header hdr{basp::message_type::dispatch_message,
                      basp::header::named_receiver_flag,
-                     0, 0, this_node(), nid, tmp.id(), invalid_actor_id,
+                     0, make_message_id().integer_value(), this_node(), nid,
+                     tmp.id(), invalid_actor_id,
                      visit(seq_num_visitor{this}, path->hdl)};
     instance.write(self->context(), get_buffer(path->hdl),
                    hdr, &writer);
@@ -440,7 +430,7 @@ void basp_broker_state::set_context(connection_handle hdl) {
   CAF_LOG_TRACE(CAF_ARG(hdl));
   auto i = ctx_tcp.find(hdl);
   if (i == ctx_tcp.end()) {
-    CAF_LOG_INFO("create new BASP context:" << CAF_ARG(hdl));
+    CAF_LOG_DEBUG("create new BASP context:" << CAF_ARG(hdl));
     i = ctx_tcp.emplace(
       hdl,
       basp::endpoint_context{
@@ -460,7 +450,7 @@ void basp_broker_state::set_context(datagram_handle hdl) {
   CAF_LOG_TRACE(CAF_ARG(hdl));
   auto i = ctx_udp.find(hdl);
   if (i == ctx_udp.end()) {
-    CAF_LOG_INFO("create new BASP context:" << CAF_ARG(hdl));
+    CAF_LOG_DEBUG("create new BASP context:" << CAF_ARG(hdl));
     i = ctx_udp.emplace(
       hdl,
       basp::endpoint_context{
@@ -643,7 +633,7 @@ behavior basp_broker::make_behavior() {
   state.allow_tcp = !get_or(config(), "middleman.disable-tcp", false);
   state.allow_udp = get_or(config(), "middleman.enable-udp", false);
   if (get_or(config(), "middleman.enable-automatic-connections", false)) {
-    CAF_LOG_INFO("enable automatic connections");
+    CAF_LOG_DEBUG("enable automatic connections");
     // open a random port and store a record for our peers how to
     // connect to this broker directly in the configuration server
     if (state.allow_tcp) {
@@ -673,7 +663,7 @@ behavior basp_broker::make_behavior() {
   auto heartbeat_interval = get_or(config(), "middleman.heartbeat-interval",
                                    defaults::middleman::heartbeat_interval);
   if (heartbeat_interval > 0) {
-    CAF_LOG_INFO("enable heartbeat" << CAF_ARG(heartbeat_interval));
+    CAF_LOG_DEBUG("enable heartbeat" << CAF_ARG(heartbeat_interval));
     send(this, tick_atom::value, heartbeat_interval);
   }
   return {

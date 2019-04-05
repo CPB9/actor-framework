@@ -28,6 +28,7 @@
 #include "caf/message.hpp"
 #include "caf/stream_priority.hpp"
 #include "caf/stream_slot.hpp"
+#include "caf/timespan.hpp"
 #include "caf/variant.hpp"
 
 #include "caf/tag/boxing_type.hpp"
@@ -76,9 +77,14 @@ struct upstream_msg : tag::boxing_type {
 
     /// Cumulative ack ID.
     int64_t acknowledged_id;
+
+    /// Maximum capacity on this path. Stages can consider this metric for
+    /// downstream actors when calculating their own maximum capactiy.
+    int32_t max_capacity;
   };
 
-  /// Informs a source that a sink orderly drops out of a stream.
+  /// Asks the source to discard any remaining credit and close this path
+  /// after receiving an ACK for the last batch.
   struct drop {
     /// Allows the testing DSL to unbox this type automagically.
     using outer_type = upstream_msg;

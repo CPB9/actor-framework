@@ -55,6 +55,7 @@
 #include "caf/detail/ripemd_160.hpp"
 #include "caf/detail/safe_equal.hpp"
 #include "caf/detail/get_root_uuid.hpp"
+#include "caf/detail/set_thread_name.hpp"
 #include "caf/detail/get_mac_addresses.hpp"
 
 #ifdef CAF_WINDOWS
@@ -323,6 +324,7 @@ void middleman::start() {
     std::condition_variable cv;
     thread_ = std::thread{[&,this] {
       CAF_SET_LOGGER_SYS(&system());
+      detail::set_thread_name("caf.multiplexer");
       system().thread_started();
       CAF_LOG_TRACE("");
       {
@@ -356,7 +358,7 @@ void middleman::stop() {
       auto ptr = static_cast<broker*>(actor_cast<abstract_actor*>(hdl));
       if (!ptr->getf(abstract_actor::is_terminated_flag)) {
         ptr->context(&backend());
-        ptr->setf(abstract_actor::is_terminated_flag);
+        ptr->quit();
         ptr->finalize();
       }
     }

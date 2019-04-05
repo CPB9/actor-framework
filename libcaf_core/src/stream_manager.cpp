@@ -39,7 +39,7 @@ stream_manager::stream_manager(scheduled_actor* selfptr, stream_priority prio)
     : self_(selfptr),
       pending_handshakes_(0),
       priority_(prio),
-      continuous_(false) {
+      flags_(0) {
   // nop
 }
 
@@ -51,16 +51,23 @@ void stream_manager::handle(inbound_path*, downstream_msg::batch&) {
   CAF_LOG_WARNING("unimplemented base handler for batches called");
 }
 
-void stream_manager::handle(inbound_path*, downstream_msg::close&) {
-  // nop
+void stream_manager::handle(inbound_path* in, downstream_msg::close&) {
+  // Reset the actor handle to make sure no further messages travel upstream.
+  in->hdl = nullptr;
 }
 
 void stream_manager::handle(inbound_path* in, downstream_msg::forced_close& x) {
   CAF_ASSERT(in != nullptr);
   CAF_LOG_TRACE(CAF_ARG2("slots", in->slts) << CAF_ARG(x));
-  // Reset the actor handle to make sure no further message travels upstream.
+  // Reset the actor handle to make sure no further messages travel upstream.
   in->hdl = nullptr;
-  abort(std::move(x.reason));
+  // A continuous stream exists independent of sources. Hence, we ignore
+  // upstream errors in this case.
+  if (!continuous()) {
+    stop(std::move(x.reason));
+  } else {
+    CAF_LOG_INFO("received (and ignored) forced_close from a source");
+  }
 }
 
 bool stream_manager::handle(stream_slots slts, upstream_msg::ack_open& x) {
@@ -82,7 +89,8 @@ bool stream_manager::handle(stream_slots slts, upstream_msg::ack_open& x) {
   }
   ptr->slts.receiver = slts.sender;
   ptr->open_credit = x.initial_demand;
-  ptr->desired_batch_size = x.desired_batch_size;
+  CAF_ASSERT(ptr->open_credit >= 0);
+  ptr->set_desired_batch_size(x.desired_batch_size);
   --pending_handshakes_;
   push();
   return true;
@@ -94,7 +102,10 @@ void stream_manager::handle(stream_slots slts, upstream_msg::ack_batch& x) {
   auto path = out().path(slts.receiver);
   if (path != nullptr) {
     path->open_credit += x.new_capacity;
-    path->desired_batch_size = x.desired_batch_size;
+    path->max_capacity = x.max_capacity;
+    CAF_ASSERT(path->open_credit >= 0);
+    CAF_ASSERT(path->max_capacity >= 0);
+    path->set_desired_batch_size(x.desired_batch_size);
     path->next_ack_id = x.acknowledged_id + 1;
     // Gravefully remove path after receiving its final ACK.
     if (path->closing && out().clean(slts.receiver))
@@ -104,21 +115,34 @@ void stream_manager::handle(stream_slots slts, upstream_msg::ack_batch& x) {
 }
 
 void stream_manager::handle(stream_slots slts, upstream_msg::drop&) {
-  error tmp;
-  out().remove_path(slts.receiver, std::move(tmp), true);
+  out().close(slts.receiver);
 }
 
 void stream_manager::handle(stream_slots slts, upstream_msg::forced_drop& x) {
   if (out().remove_path(slts.receiver, x.reason, true))
-    abort(std::move(x.reason));
+    stop(std::move(x.reason));
 }
 
-void stream_manager::stop() {
+void stream_manager::stop(error reason) {
+  if (reason)
+    out().abort(reason);
+  else
+    out().close();
+  finalize(reason);
+  self_->erase_inbound_paths_later(this, std::move(reason));
+}
+
+void stream_manager::shutdown() {
   CAF_LOG_TRACE("");
-  out().close();
-  error tmp;
-  finalize(tmp);
-  self_->erase_inbound_paths_later(this);
+  // Mark as shutting down and reset other flags.
+  if (shutting_down())
+    return;
+  flags_ = is_shutting_down_flag;
+  CAF_LOG_DEBUG("emit shutdown messages on" << inbound_paths_.size()
+                << "inbound paths;" << CAF_ARG2("out.clean", out().clean())
+                << CAF_ARG2("out.paths", out().num_paths()));
+  for (auto ipath : inbound_paths_)
+    ipath->emit_regular_shutdown(self_);
 }
 
 void stream_manager::advance() {
@@ -128,27 +152,19 @@ void stream_manager::advance() {
     auto& cfg = self_->system().config();
     auto bc = cfg.stream_desired_batch_complexity;
     auto interval = cfg.stream_credit_round_interval;
-    auto& mbox = self_->mailbox();
-    auto& qs = get<2>(mbox.queue().queues()).queues();
+    auto& qs = self_->get_downstream_queue().queues();
     // Iterate all queues for inbound traffic.
     for (auto& kvp : qs) {
       auto inptr = kvp.second.policy().handler.get();
       // Ignore inbound paths of other managers.
       if (inptr->mgr.get() == this) {
         auto bs = static_cast<int32_t>(kvp.second.total_task_size());
-        inptr->emit_ack_batch(self_, bs, interval, bc);
+        inptr->emit_ack_batch(self_, bs, out().max_capacity(), interval, bc);
       }
     }
   }
   // Try to generate more batches.
   push();
-}
-
-void stream_manager::abort(error reason) {
-  CAF_LOG_TRACE(CAF_ARG(reason));
-  out().abort(reason);
-  finalize(reason);
-  self_->erase_inbound_paths_later(this, std::move(reason));
 }
 
 void stream_manager::push() {
@@ -175,6 +191,11 @@ void stream_manager::deliver_handshake(response_promise& rp, stream_slot slot,
 
 bool stream_manager::generate_messages() {
   return false;
+}
+
+const downstream_manager& stream_manager::out() const {
+  // We restore the const when returning from this member function.
+  return const_cast<stream_manager*>(this)->out();
 }
 
 void stream_manager::cycle_timeout(size_t) {

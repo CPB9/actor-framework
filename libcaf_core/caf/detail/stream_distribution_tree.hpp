@@ -114,9 +114,7 @@ public:
   void handle(stream_slots slts, upstream_msg::drop& x) override {
     CAF_LOG_TRACE(CAF_ARG(slts) << CAF_ARG(x));
     CAF_IGNORE_UNUSED(x);
-    auto slot = slts.receiver;
-    if (out().remove_path(slts.receiver, none, true))
-      policy_.path_dropped(slot);
+    super::handle(slts, x);
   }
 
   void handle(stream_slots slts, upstream_msg::forced_drop& x) override {

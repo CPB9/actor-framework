@@ -125,6 +125,16 @@ namespace network {
     return strerror(errno);
   }
 
+  expected<void> child_process_inherit(native_socket fd, bool new_value) {
+    CAF_LOG_TRACE(CAF_ARG(fd) << CAF_ARG(new_value));
+    // read flags for fd
+    CALL_CFUN(rf, detail::cc_not_minus1, "fcntl", fcntl(fd, F_GETFD));
+    // calculate and set new flags
+    auto wf = (! new_value) ? (rf | FD_CLOEXEC) : (rf & (~(FD_CLOEXEC)));
+    CALL_CFUN(set_res, detail::cc_not_minus1, "fcntl", fcntl(fd, F_SETFD, wf));
+    return unit;
+  }
+
   expected<void> nonblocking(native_socket fd, bool new_value) {
     CAF_LOG_TRACE(CAF_ARG(fd) << CAF_ARG(new_value));
     // read flags for fd
@@ -156,6 +166,9 @@ namespace network {
       perror("pipe");
       exit(EXIT_FAILURE);
     }
+    // note pipe2 is better to avoid races in setting CLOEXEC (but not posix)
+    child_process_inherit(pipefds[0], false);
+    child_process_inherit(pipefds[1], false);
     return {pipefds[0], pipefds[1]};
   }
 
@@ -195,6 +208,11 @@ namespace network {
       LocalFree(errorText);
     }
     return result;
+  }
+
+  expected<void> child_process_inherit(native_socket fd, bool new_value) {
+    // nop; FIXME: possible to implement via SetHandleInformation ?
+    return unit;
   }
 
   expected<void> nonblocking(native_socket fd, bool new_value) {
@@ -399,6 +417,34 @@ expected<uint16_t> remote_port_of_fd(native_socket fd) {
   CALL_CFUN(tmp, detail::cc_zero, "getpeername",
             getpeername(fd, reinterpret_cast<sockaddr*>(&st), &st_len));
   return ntohs(port_of(reinterpret_cast<sockaddr&>(st)));
+}
+
+// -- shutdown function family -------------------------------------------------
+
+namespace {
+
+#ifdef CAF_WINDOWS
+static constexpr int read_channel = SD_RECEIVE;
+static constexpr int write_channel = SD_SEND;
+static constexpr int both_channels = SD_BOTH;
+#else // CAF_WINDOWS
+static constexpr int read_channel = SHUT_RD;
+static constexpr int write_channel = SHUT_WR;
+static constexpr int both_channels = SHUT_RDWR;
+#endif // CAF_WINDOWS
+
+} // namespace <anonymous>
+
+void shutdown_read(native_socket fd) {
+  ::shutdown(fd, read_channel);
+}
+
+void shutdown_write(native_socket fd) {
+  ::shutdown(fd, write_channel);
+}
+
+void shutdown_both(native_socket fd) {
+  ::shutdown(fd, both_channels);
 }
 
 } // namespace network

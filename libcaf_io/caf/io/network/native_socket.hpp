@@ -83,6 +83,11 @@ std::string last_socket_error_as_string();
 /// and the latter is the write handle.
 std::pair<native_socket, native_socket> create_pipe();
 
+/// Sets fd to be inherited by child processes if `new_value == true`
+/// or not if `new_value == false`.  Not implemented on Windows.
+/// throws `network_error` on error
+expected<void> child_process_inherit(native_socket fd, bool new_value);
+
 /// Sets fd to nonblocking if `set_nonblocking == true`
 /// or to blocking if `set_nonblocking == false`
 /// throws `network_error` on error
@@ -118,6 +123,15 @@ expected<uint16_t> remote_port_of_fd(native_socket fd);
 
 /// Returns the remote host address of `fd`.
 expected<std::string> remote_addr_of_fd(native_socket fd);
+
+/// Closes the read channel for a socket.
+void shutdown_read(native_socket fd);
+
+/// Closes the write channel for a socket.
+void shutdown_write(native_socket fd);
+
+/// Closes the both read and write channel for a socket.
+void shutdown_both(native_socket fd);
 
 } // namespace network
 } // namespace io

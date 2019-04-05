@@ -52,11 +52,7 @@ void insert(string_builder& builder, size_t count, char ch) {
 
 namespace caf {
 
-config_option_set::config_option_set() {
-  // nop
-}
-
-config_option_set& config_option_set::add(config_option&& opt) {
+config_option_set& config_option_set::add(config_option opt) {
   opts_.emplace_back(std::move(opt));
   return *this;
 }
@@ -144,8 +140,20 @@ auto config_option_set::parse(config_map& config, argument_iterator first,
       auto val = config_value::parse(slice);
       if (!val)
         return pec::illegal_argument;
-      if (opt.check(*val) != none)
-        return pec::type_mismatch;
+      if (opt.check(*val) != none) {
+        // The parser defaults to unescaped strings. For example, --foo=bar
+        // will interpret `bar` as a string. Hence, we'll get a type mismatch
+        // if `foo` expects an atom. We check this special case here to avoid
+        // the clumsy --foo="'bar'" notation on the command line.
+        if (holds_alternative<std::string>(*val)
+            && opt.type_name() == "atom"
+            && slice.substr(0, 1) != "\""
+            && slice.size() <= 10) {
+          *val = atom_from_string(std::string{slice.begin(), slice.end()});
+        } else {
+          return pec::type_mismatch;
+        }
+      }
       opt.store(*val);
       submap[opt_name] = std::move(*val);
     }
@@ -169,8 +177,9 @@ auto config_option_set::parse(config_map& config, argument_iterator first,
       if (opt == nullptr)
         return {pec::not_an_option, i};
       auto code = consume(*opt,
-                          assign_op == npos ? i->end()
-                                            : i->begin() + assign_op + 1,
+                          assign_op == npos
+                          ? i->end()
+                          : i->begin() + static_cast<ptrdiff_t>(assign_op + 1),
                           i->end());
       if (code != pec::success)
         return {code, i};

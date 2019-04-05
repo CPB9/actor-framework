@@ -80,6 +80,8 @@ struct ssl_policy {
     memset(&addr, 0, sizeof(addr));
     caf::io::network::socket_size_type addrlen = sizeof(addr);
     result = accept(fd, reinterpret_cast<sockaddr*>(&addr), &addrlen);
+    // note accept4 is better to avoid races in setting CLOEXEC (but not posix)
+    io::network::child_process_inherit(result, false);
     CAF_LOG_DEBUG(CAF_ARG(fd) << CAF_ARG(result));
     if (result == io::network::invalid_native_socket) {
       auto err = io::network::last_socket_error();
@@ -107,7 +109,7 @@ class scribe_impl : public io::scribe {
       // nop
     }
 
-    ~scribe_impl() {
+    ~scribe_impl() override {
       CAF_LOG_TRACE("");
     }
 
@@ -131,9 +133,9 @@ class scribe_impl : public io::scribe {
       return stream_.rd_buf();
     }
 
-    void stop_reading() override {
+    void graceful_shutdown() override {
       CAF_LOG_TRACE("");
-      stream_.stop_reading();
+      stream_.graceful_shutdown();
       detach(&stream_.backend(), false);
     }
 

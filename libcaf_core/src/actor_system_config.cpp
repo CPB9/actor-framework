@@ -57,6 +57,9 @@ actor_system_config::actor_system_config()
   add_message_type_impl<std::vector<actor_addr>>("std::vector<@addr>");
   add_message_type_impl<std::vector<atom_value>>("std::vector<@atom>");
   add_message_type_impl<std::vector<message>>("std::vector<@message>");
+  add_message_type_impl<config_value_map>("config_value_map");
+  add_message_type_impl<config_value::list>("config_value::list");
+  add_message_type_impl<config_value::dictionary>("config_value::dictionary");
   // (1) hard-coded defaults
   stream_desired_batch_complexity = defaults::stream::desired_batch_complexity;
   stream_max_batch_delay = defaults::stream::max_batch_delay;
@@ -81,12 +84,13 @@ actor_system_config::actor_system_config()
   work_stealing_moderate_sleep_duration_us = to_us(ws::moderate_sleep_duration);
   work_stealing_relaxed_steal_interval = ws::relaxed_steal_interval;
   work_stealing_relaxed_sleep_duration_us = to_us(ws::relaxed_sleep_duration);
-  logger_file_name = "actor_log_[PID]_[TIMESTAMP]_[NODE].log";
-  logger_file_format = "%r %c %p %a %t %C %M %F:%L %m%n";
-  logger_console = atom("none");
-  logger_console_format = "%m";
-  logger_verbosity = atom("trace");
+  namespace lg = defaults::logger;
+  logger_file_name = lg::file_name;
+  logger_file_format = lg::file_format;
+  logger_console = lg::console;
+  logger_console_format = lg::console_format;
   logger_inline_output = false;
+  logger_verbosity = lg::file_verbosity;
   namespace mm = defaults::middleman;
   middleman_network_backend = mm::network_backend;
   middleman_enable_automatic_connections = false;
@@ -143,14 +147,19 @@ actor_system_config::actor_system_config()
        "sets the filesystem path of the log file")
   .add(logger_file_format, "file-format",
        "sets the line format for individual log file entires")
+  .add<atom_value>("file-verbosity",
+       "sets the file output verbosity (quiet|error|warning|info|debug|trace)")
   .add(logger_console, "console",
        "sets the type of output to std::clog (none|colored|uncolored)")
   .add(logger_console_format, "console-format",
        "sets the line format for printing individual log entires")
+  .add<atom_value>("console-verbosity",
+       "sets the console output verbosity "
+       "(quiet|error|warning|info|debug|trace)")
   .add(logger_component_filter, "component-filter",
        "exclude all listed components from logging")
   .add(logger_verbosity, "verbosity",
-       "sets the verbosity (quiet|error|warning|info|debug|trace)")
+       "set file and console verbosity (deprecated)")
   .add(logger_inline_output, "inline-output",
        "sets whether a separate thread is used for I/O");
   opt_group{custom_options_, "middleman"}

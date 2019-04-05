@@ -530,6 +530,39 @@ T get_or(const actor_system_config& cfg, string_view name,
 
 std::string get_or(const actor_system_config& cfg, string_view name,
                    const char* default_value);
+
+/// @private
+void put_impl(config_value::dictionary& dict,
+              const std::vector<string_view>& path, config_value& value);
+
+/// @private
+void put_impl(config_value::dictionary& dict, string_view key,
+              config_value& value);
+
+/// @private
+void put_impl(dictionary<config_value::dictionary>& dict, string_view key,
+              config_value& value);
+
+/// Converts `value` to a `config_value` and assigns it to `key`.
+/// @param dict Dictionary of key-value pairs.
+/// @param key Human-readable nested keys in the form `category.key`.
+/// @param value New value for given `key`.
+template <class T>
+void put(dictionary<config_value::dictionary>& dict, string_view key,
+         T&& value) {
+  config_value tmp{std::forward<T>(value)};
+  put_impl(dict, key, tmp);
+}
+
+/// Inserts a new list named `name` into the dictionary `xs` and returns
+/// a reference to it. Overrides existing entries with the same name.
+config_value::list& put_list(config_value::dictionary& xs, std::string name);
+
+/// Inserts a new list named `name` into the dictionary `xs` and returns
+/// a reference to it. Overrides existing entries with the same name.
+config_value::dictionary& put_dictionary(config_value::dictionary& xs,
+                                         std::string name);
+
 /// @relates config_value
 bool operator<(const config_value& x, const config_value& y);
 

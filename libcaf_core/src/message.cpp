@@ -60,13 +60,13 @@ message::~message() {
 
 void* message::get_mutable(size_t p) {
   CAF_ASSERT(vals_ != nullptr);
-  return vals_->get_mutable(p);
+  return vals_.unshared().get_mutable(p);
 
 }
 
 error message::load(size_t pos, deserializer& source) {
   CAF_ASSERT(vals_ != nullptr);
-  return vals_->load(pos, source);
+  return vals_.unshared().load(pos, source);
 }
 
 size_t message::size() const noexcept {
@@ -151,7 +151,7 @@ error message::load(deserializer& source) {
   err = source.end_object();
   if (err)
     return err;
-  message result{std::move(dmd)};
+  message result{detail::message_data::cow_ptr{std::move(dmd)}};
   swap(result);
   return none;
 }

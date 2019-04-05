@@ -5,8 +5,6 @@ defaultBuildFlags = [
     'CAF_MORE_WARNINGS:BOOL=yes',
     'CAF_ENABLE_RUNTIME_CHECKS:BOOL=yes',
     'CAF_NO_OPENCL:BOOL=yes',
-    'OPENSSL_ROOT_DIR=/usr/local/opt/openssl',
-    'OPENSSL_INCLUDE_DIR=/usr/local/opt/openssl/include',
 ]
 
 // CMake flags for release builds.
@@ -17,7 +15,13 @@ releaseBuildFlags = defaultBuildFlags + [
 debugBuildFlags = defaultBuildFlags + [
     'CAF_ENABLE_RUNTIME_CHECKS:BOOL=yes',
     'CAF_ENABLE_ADDRESS_SANITIZER:BOOL=yes',
-    'CAF_LOG_LEVEL:STRING=4',
+    'CAF_LOG_LEVEL:STRING=TRACE',
+]
+
+// CMake flags for macOS builds only.
+macBuildFlags = [
+    'OPENSSL_ROOT_DIR=/usr/local/opt/openssl',
+    'OPENSSL_INCLUDE_DIR=/usr/local/opt/openssl/include',
 ]
 
 // Our build matrix. The keys are the operating system labels and the values
@@ -32,7 +36,7 @@ buildMatrix = [
     ['macOS', [
         builds: ['debug'],
         tools: ['clang'],
-        cmakeArgs: debugBuildFlags,
+        cmakeArgs: debugBuildFlags + macBuildFlags,
     ]],
     // One release build per supported OS. FreeBSD and Windows have the least
     // testing outside Jenkins, so we also explicitly schedule debug builds.
@@ -44,7 +48,7 @@ buildMatrix = [
     ['macOS', [
         builds: ['release'],
         tools: ['clang'],
-        cmakeArgs: releaseBuildFlags,
+        cmakeArgs: releaseBuildFlags + macBuildFlags,
     ]],
     ['FreeBSD', [
         builds: ['debug'], // no release build for now, because it takes 1h
@@ -61,6 +65,8 @@ buildMatrix = [
         ],
     ]],
     // One Additional build for coverage reports.
+    /* TODO: this build exhausts all storage on the node and is temporarily
+     *       disabled until resolving the issue
     ['Linux', [
         builds: ['debug'],
         tools: ['gcc8 && gcovr'],
@@ -71,6 +77,7 @@ buildMatrix = [
             'CAF_FORCE_NO_EXCEPTIONS:BOOL=yes',
         ],
     ]],
+    */
 ]
 
 // Optional environment variables for combinations of labels.
@@ -150,9 +157,8 @@ def buildSteps(buildType, cmakeArgs, buildId) {
         }
     } else {
         echo "Unix build on $NODE_NAME"
-        def leakCheck = STAGE_NAME.contains("Linux") && !STAGE_NAME.contains("clang")
         withEnv(["label_exp=" + STAGE_NAME.toLowerCase(),
-                 "ASAN_OPTIONS=detect_leaks=" + (leakCheck ? 1 : 0)]) {
+                 "ASAN_OPTIONS=detect_leaks=0"]) {
             cmakeSteps(buildType, cmakeArgs, buildId)
         }
     }
@@ -184,6 +190,9 @@ def makeBuildStages(matrixIndex, builds, lblExpr, settings) {
 }
 
 pipeline {
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '50', artifactNumToKeepStr: '10'))
+    }
     agent none
     environment {
         LD_LIBRARY_PATH = "$WORKSPACE/caf-sources/build/lib"
@@ -198,11 +207,11 @@ pipeline {
                 deleteDir()
                 dir('caf-sources') {
                     checkout scm
+                    sh './scripts/get-release-version.sh'
                 }
                 stash includes: 'caf-sources/**', name: 'caf-sources'
             }
         }
-        // Start builds.
         stage('Builds') {
             steps {
                 script {
@@ -219,6 +228,54 @@ pipeline {
                         }
                     }
                     parallel xs
+                }
+            }
+        }
+        stage('Documentation') {
+            agent { label 'pandoc' }
+            steps {
+                deleteDir()
+                unstash('caf-sources')
+                dir('caf-sources') {
+                    // Configure and build.
+                    cmakeBuild([
+                        buildDir: 'build',
+                        installation: 'cmake in search path',
+                        sourceDir: '.',
+                        cmakeArgs: '-DCAF_BUILD_TEX_MANUAL=yes',
+                        steps: [[
+                            args: '--target doc',
+                            withCmake: true,
+                        ]],
+                    ])
+                    sshagent(['84d71a75-cbb6-489a-8f4c-d0e2793201e9']) {
+                        sh '''
+                            if [ "$(cat branch.txt)" = "master" ]; then
+                                rsync -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" -r -z --delete build/doc/html/ www.inet.haw-hamburg.de:/users/www/www.actor-framework.org/html/doc
+                                scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null build/doc/manual.pdf www.inet.haw-hamburg.de:/users/www/www.actor-framework.org/html/pdf/manual.pdf
+                            fi
+                        '''
+                    }
+                }
+                dir('read-the-docs') {
+                    git([
+                        credentialsId: '9b054212-9bb4-41fd-ad8e-b7d47495303f',
+                        url: 'git@github.com:actor-framework/read-the-docs.git',
+                    ])
+                    sh '''
+                        if [ "$(cat ../caf-sources/branch.txt)" = "master" ]; then
+                            cp ../caf-sources/build/doc/rst/* .
+                            if [ -n "$(git status --porcelain)" ]; then
+                                git add .
+                                git commit -m "Update Manual"
+                                git push --set-upstream origin master
+                                if [ -z "$(grep 'exp.sha' ../caf-sources/release.txt)" ] ; then
+                                    git tag $(cat ../caf-sources/release.txt)
+                                    git push origin $(cat ../caf-sources/release.txt)
+                                fi
+                            fi
+                        fi
+                    '''
                 }
             }
         }

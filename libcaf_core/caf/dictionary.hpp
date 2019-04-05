@@ -84,6 +84,10 @@ public:
 
   dictionary() = default;
 
+  dictionary(dictionary&&) = default;
+
+  dictionary(const dictionary&) = default;
+
   dictionary(std::initializer_list<value_type> xs) : xs_(xs) {
     // nop
   }
@@ -92,6 +96,10 @@ public:
   dictionary(InputIterator first, InputIterator last) : xs_(first, last) {
     // nop
   }
+
+  dictionary& operator=(dictionary&&) = default;
+
+  dictionary& operator=(const dictionary&) = default;
 
   // -- iterator access --------------------------------------------------------
 
@@ -181,28 +189,36 @@ public:
   iterator_bool_pair emplace(K&& key, T&& value) {
     auto i = lower_bound(key);
     if (i == end())
-      return xs_.emplace(copy(std::forward<K>(key)), std::forward<T>(value));
+      return xs_.emplace(copy(std::forward<K>(key)), V{std::forward<T>(value)});
     if (i->first == key)
       return {i, false};
     return {xs_.emplace_hint(i, copy(std::forward<K>(key)),
-                             std::forward<T>(value)),
+                             V{std::forward<T>(value)}),
             true};
+  }
+
+  iterator_bool_pair insert(value_type kvp) {
+    return emplace(kvp.first, std::move(kvp.second));
+  }
+
+  iterator insert(iterator hint, value_type kvp) {
+    return emplace_hint(hint, kvp.first, std::move(kvp.second));
   }
 
   template <class T>
   iterator_bool_pair insert(string_view key, T&& value) {
-    return emplace(key, std::forward<T>(value));
+    return emplace(key, V{std::forward<T>(value)});
   }
 
   template <class K, class T>
   iterator emplace_hint(iterator hint, K&& key, T&& value) {
     if (hint == end() || hint->first > key)
-      return xs_.emplace(copy(std::forward<K>(key)), std::forward<T>(value))
+      return xs_.emplace(copy(std::forward<K>(key)), V{std::forward<T>(value)})
              .first;
     if (hint->first == key)
       return hint;
     return xs_.emplace_hint(hint, copy(std::forward<K>(key)),
-                            std::forward<T>(value));
+                            V{std::forward<T>(value)});
   }
 
   template <class T>
@@ -210,16 +226,20 @@ public:
     return emplace_hint(hint, key, std::forward<T>(value));
   }
 
+  void insert(const_iterator first, const_iterator last) {
+    xs_.insert(first, last);
+  }
+
   template <class T>
   iterator_bool_pair insert_or_assign(string_view key, T&& value) {
     auto i = lower_bound(key);
     if (i == end())
-      return xs_.emplace(copy(key), std::forward<T>(value));
+      return xs_.emplace(copy(key), V{std::forward<T>(value)});
     if (i->first == key) {
-      i->second = std::forward<T>(value);
+      i->second = V{std::forward<T>(value)};
       return {i, false};
     }
-    return {xs_.emplace_hint(i, copy(key), std::forward<T>(value)), true};
+    return {xs_.emplace_hint(i, copy(key), V{std::forward<T>(value)}), true};
   }
 
   template <class T>
@@ -231,7 +251,7 @@ public:
       hint->second = std::forward<T>(value);
       return hint;
     }
-    return xs_.emplace_hint(hint, copy(key), std::forward<T>(value));
+    return xs_.emplace_hint(hint, copy(key), V{std::forward<T>(value)});
   }
 
   // -- lookup -----------------------------------------------------------------
@@ -290,6 +310,11 @@ private:
     return std::lower_bound(from, end(), key, cmp);
   }
 
+  template <size_t N>
+  static inline std::string copy(const char (&str)[N]) {
+    return std::string{str};
+  }
+
   // Copies the content of `str` into a new string.
   static inline std::string copy(string_view str) {
     return std::string{str.begin(), str.end()};
@@ -302,6 +327,8 @@ private:
 
   map_type xs_;
 };
+
+// -- operators ----------------------------------------------------------------
 
 // @relates dictionary
 template <class T>
@@ -337,6 +364,15 @@ bool operator>(const dictionary<T>& xs, const dictionary<T>& ys) {
 template <class T>
 bool operator>=(const dictionary<T>& xs, const dictionary<T>& ys) {
   return xs.container() >= ys.container();
+}
+
+// -- free functions -----------------------------------------------------------
+
+/// Convenience function for calling `dict.insert_or_assign(key, value)`.
+// @relates dictionary
+template <class T, class V>
+void put(dictionary<T>& dict, string_view key, V&& value) {
+  dict.insert_or_assign(key, std::forward<V>(value));
 }
 
 } // namespace caf

@@ -37,6 +37,7 @@
 #include "caf/fwd.hpp"
 #include "caf/inbound_path.hpp"
 #include "caf/invoke_message_result.hpp"
+#include "caf/is_actor_handle.hpp"
 #include "caf/local_actor.hpp"
 #include "caf/logger.hpp"
 #include "caf/make_sink_result.hpp"
@@ -141,7 +142,7 @@ public:
   using stream_manager_map = std::map<stream_slot, stream_manager_ptr>;
 
   /// Stores asynchronous messages with default priority.
-  using default_queue = intrusive::drr_cached_queue<policy::normal_messages>;
+  using normal_queue = intrusive::drr_cached_queue<policy::normal_messages>;
 
   /// Stores asynchronous messages with hifh priority.
   using urgent_queue = intrusive::drr_cached_queue<policy::urgent_messages>;
@@ -170,18 +171,18 @@ public:
     using unique_pointer = mailbox_element_ptr;
 
     using queue_type =
-      intrusive::wdrr_fixed_multiplexed_queue<policy::categorized,
-                                              default_queue, upstream_queue,
-                                              downstream_queue, urgent_queue>;
-
-    static constexpr size_t default_queue_index = 0;
-
-    static constexpr size_t upstream_queue_index = 1;
-
-    static constexpr size_t downstream_queue_index = 2;
-
-    static constexpr size_t urgent_queue_index = 3;
+      intrusive::wdrr_fixed_multiplexed_queue<policy::categorized, urgent_queue,
+                                              normal_queue, upstream_queue,
+                                              downstream_queue>;
   };
+
+  static constexpr size_t urgent_queue_index = 0;
+
+  static constexpr size_t normal_queue_index = 1;
+
+  static constexpr size_t upstream_queue_index = 2;
+
+  static constexpr size_t downstream_queue_index = 3;
 
   /// A queue optimized for single-reader-many-writers.
   using mailbox_type = intrusive::fifo_inbox<mailbox_policy>;
@@ -461,7 +462,7 @@ public:
   template <class Init, class Pull, class Done, class Finalize = unit_t,
             class DownstreamManager = default_downstream_manager_t<Pull>,
             class Trait = stream_source_trait_t<Pull>>
-  detail::enable_if_t<!detail::is_actor_handle<Init>::value && Trait::valid,
+  detail::enable_if_t<!is_actor_handle<Init>::value && Trait::valid,
                       make_source_result_t<DownstreamManager>>
   make_source(Init init, Pull pull, Done done, Finalize finalize = {},
               policy::arg<DownstreamManager> token = {}) {
@@ -474,7 +475,7 @@ public:
             class Finalize = unit_t,
             class DownstreamManager = default_downstream_manager_t<Pull>,
             class Trait = stream_source_trait_t<Pull>>
-  detail::enable_if_t<detail::is_actor_handle<ActorHandle>::value,
+  detail::enable_if_t<is_actor_handle<ActorHandle>::value,
                       make_source_result_t<DownstreamManager>>
   make_source(const ActorHandle& dest, std::tuple<Ts...> xs, Init init,
               Pull pull, Done done, Finalize fin = {},
@@ -495,7 +496,7 @@ public:
             class Finalize = unit_t,
             class DownstreamManager = default_downstream_manager_t<Pull>,
             class Trait = stream_source_trait_t<Pull>>
-  detail::enable_if_t<detail::is_actor_handle<ActorHandle>::value && Trait::valid,
+  detail::enable_if_t<is_actor_handle<ActorHandle>::value && Trait::valid,
                       make_source_result_t<DownstreamManager>>
   make_source(const ActorHandle& dest, Init init, Pull pull, Done done,
               Finalize fin = {},
@@ -690,19 +691,14 @@ public:
 
   // -- behavior management ----------------------------------------------------
 
-  /// Returns whether `true` if the behavior stack is not empty or
-  /// if outstanding responses exist, `false` otherwise.
-  inline bool has_behavior() const {
-    return !bhvr_stack_.empty()
-           || !awaited_responses_.empty()
-           || !multiplexed_responses_.empty()
-           || !stream_managers_.empty()
-           || !pending_stream_managers_.empty();
+  /// Returns `true` if the behavior stack is not empty.
+  inline bool has_behavior() const noexcept {
+    return !bhvr_stack_.empty();
   }
 
   inline behavior& current_behavior() {
     return !awaited_responses_.empty() ? awaited_responses_.front().second
-                                        : bhvr_stack_.back();
+                                       : bhvr_stack_.back();
   }
 
   /// Installs a new behavior without performing any type checks.
@@ -722,7 +718,7 @@ public:
   void push_to_cache(mailbox_element_ptr ptr);
 
   /// Returns the default queue of the mailbox that stores ordinary messages.
-  default_queue& get_default_queue();
+  normal_queue& get_normal_queue();
 
   /// Returns the queue of the mailbox that stores `upstream_msg` messages.
   upstream_queue& get_upstream_queue();
@@ -769,7 +765,7 @@ public:
     if (i == stream_managers_.end()) {
       auto j = pending_stream_managers_.find(slts.receiver);
       if (j != pending_stream_managers_.end()) {
-        j->second->abort(sec::stream_init_failed);
+        j->second->stop(sec::stream_init_failed);
         pending_stream_managers_.erase(j);
         return;
       }
@@ -783,13 +779,15 @@ public:
       return;
     }
     CAF_ASSERT(i->second != nullptr);
-    i->second->handle(slts, x);
-    if (i->second->done()) {
-      CAF_LOG_INFO("done sending:" << CAF_ARG(slts));
-      i->second->stop();
-      stream_managers_.erase(i);
-      if (stream_managers_.empty())
-        stream_ticks_.stop();
+    auto ptr = i->second;
+    ptr->handle(slts, x);
+    if (ptr->done()) {
+      CAF_LOG_DEBUG("done sending:" << CAF_ARG(slts));
+      ptr->stop();
+      erase_stream_manager(ptr);
+    } else if (ptr->out().path(slts.receiver) == nullptr) {
+      CAF_LOG_DEBUG("done sending on path:" << CAF_ARG(slts.receiver));
+      erase_stream_manager(slts.receiver);
     }
   }
 
@@ -870,6 +868,19 @@ public:
   /// Advances credit and batch timeouts and returns the timestamp when to call
   /// this function again.
   actor_clock::time_point advance_streams(actor_clock::time_point now);
+
+  // -- properties -------------------------------------------------------------
+
+  /// Returns `true` if the actor has a behavior, awaits responses, or
+  /// participates in streams.
+  /// @private
+  inline bool alive() const noexcept {
+    return !bhvr_stack_.empty()
+           || !awaited_responses_.empty()
+           || !multiplexed_responses_.empty()
+           || !stream_managers_.empty()
+           || !pending_stream_managers_.empty();
+  }
 
   /// @endcond
 

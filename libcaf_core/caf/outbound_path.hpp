@@ -107,8 +107,9 @@ public:
                   << CAF_ARG(force_underfull));
     if (pending())
       return;
+    CAF_ASSERT(open_credit >= 0);
     CAF_ASSERT(desired_batch_size > 0);
-    CAF_ASSERT(cache.size() < std::numeric_limits<int32_t>::max());
+    CAF_ASSERT(cache.size() <= std::numeric_limits<int32_t>::max());
     auto first = cache.begin();
     auto last = first + std::min(open_credit,
                                  static_cast<int32_t>(cache.size()));
@@ -137,14 +138,16 @@ public:
 
   /// Returns whether this path is pending, i.e., didn't receive an `ack_open`
   /// yet.
-  inline bool pending() const noexcept {
+  bool pending() const noexcept {
     return slts.receiver == invalid_stream_slot;
   }
 
   /// Returns whether no pending ACKs exist.
-  inline bool clean() const noexcept {
+  bool clean() const noexcept {
     return next_batch_id == next_ack_id;
   }
+
+  void set_desired_batch_size(int32_t value) noexcept;
 
   // -- member variables -------------------------------------------------------
 
@@ -166,6 +169,9 @@ public:
   /// ID of the first unacknowledged batch. Note that CAF uses accumulative
   /// ACKs, i.e., receiving an ACK with a higher ID is not an error.
   int64_t next_ack_id;
+
+  /// Stores the maximum capacity of the downstream actor.
+  int32_t max_capacity;
 
   /// Stores whether an outbound path is marked for removal. The
   /// `downstream_manger` no longer sends new batches to a closing path, but

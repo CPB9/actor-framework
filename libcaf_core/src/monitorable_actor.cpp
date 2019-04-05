@@ -48,9 +48,10 @@ void monitorable_actor::attach(attachable_ptr ptr) {
     attach_impl(ptr);
     return true;
   });
-  CAF_LOG_DEBUG("cannot attach functor to terminated actor: call immediately");
-  if (!attached)
+  if (!attached) {
+    CAF_LOG_DEBUG("cannot attach functor to terminated actor: call immediately");
     ptr->actor_exited(fail_state, nullptr);
+  }
 }
 
 size_t monitorable_actor::detach(const attachable::token& what) {
@@ -90,10 +91,10 @@ bool monitorable_actor::cleanup(error&& reason, execution_unit* host) {
   if (!set_fail_state)
     return false;
   CAF_LOG_DEBUG("cleanup" << CAF_ARG(id())
-                << CAF_ARG(node()) << CAF_ARG(reason));
+                << CAF_ARG(node()) << CAF_ARG(fail_state_));
   // send exit messages
   for (attachable* i = head.get(); i != nullptr; i = i->next.get())
-    i->actor_exited(reason, host);
+    i->actor_exited(fail_state_, host);
   // tell printer to purge its state for us if we ever used aout()
   if (getf(abstract_actor::has_used_aout_flag)) {
     auto pr = home_system().scheduler().printer();
@@ -144,7 +145,7 @@ void monitorable_actor::add_link(abstract_actor* x) {
     }
   });
   if (send_exit_immediately)
-    x->enqueue(nullptr, invalid_message_id,
+    x->enqueue(nullptr, make_message_id(),
                  make_message(exit_msg{address(), fail_state}), nullptr);
 }
 
@@ -175,7 +176,7 @@ bool monitorable_actor::add_backlink(abstract_actor* x) {
     success = true;
   }
   if (send_exit_immediately)
-    x->enqueue(nullptr, invalid_message_id,
+    x->enqueue(nullptr, make_message_id(),
                make_message(exit_msg{address(), fail_state}), nullptr);
   return success;
 }
